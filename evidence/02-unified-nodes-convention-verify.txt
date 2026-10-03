@@ -1,0 +1,32 @@
+﻿[runner] python = C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+[runner] solver ready=True oracle ready=True
+============================= test session starts =============================
+platform win32 -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: D:\deepseekharness\�ڿ���\qbc-u097-ai-engineering-red-team
+plugins: anyio-4.15.1
+collecting ... collected 20 items
+
+tests/test_numerics.py::test_ftcs_probe_exists PASSED                    [  5%]
+tests/test_numerics.py::test_btcs_probe_exists PASSED                    [ 10%]
+tests/test_numerics.py::test_cn_probe_exists PASSED                      [ 15%]
+tests/test_numerics.py::test_ftcs_accuracy_vs_oracle PASSED              [ 20%]
+tests/test_numerics.py::test_btcs_accuracy_vs_oracle PASSED              [ 25%]
+tests/test_numerics.py::test_cn_accuracy_vs_oracle PASSED                [ 30%]
+tests/test_numerics.py::test_solver_internal_error_wrapped PASSED        [ 35%]
+tests/test_services.py::test_health_solver PASSED                        [ 40%]
+tests/test_services.py::test_ftcs_r049_converges PASSED                  [ 45%]
+tests/test_services.py::test_ftcs_r051_blowup PASSED                     [ 50%]
+tests/test_services.py::test_alpha_negative_400 PASSED                   [ 55%]
+tests/test_services.py::test_nodes_1_400 PASSED                          [ 60%]
+tests/test_services.py::test_tend_zero_returns_initial PASSED            [ 65%]
+tests/test_services.py::test_probe_out_of_range_400 PASSED               [ 70%]
+tests/test_services.py::test_nodes_2_3_no_crash PASSED                   [ 75%]
+tests/test_services.py::test_oracle_single_mode_hand_computed PASSED     [ 80%]
+tests/test_services.py::test_oracle_steady_convection PASSED             [ 85%]
+tests/test_services.py::test_oracle_no_closed_form_422 PASSED            [ 90%]
+tests/test_services.py::test_oracle_health PASSED                        [ 95%]
+tests/test_services.py::test_concurrent_consistency PASSED               [100%]
+
+============================= 20 passed in 0.92s ==============================
+[runner] pytest exit=0
