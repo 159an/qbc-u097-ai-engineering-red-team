@@ -70,3 +70,8 @@ submission/*.zip
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 靶场服务的运行日志：每次启动重写，属运行噪声而非证据
+# （构建/配置/探测/一致性测试的证据日志仍会提交）
+evidence/logs/solver.*.log
+evidence/logs/oracle.*.log
