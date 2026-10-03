@@ -1,0 +1,178 @@
+{
+  "generatedAt": "2026-10-03T06:24:15.700Z",
+  "source": "B1.trajectory.raw.json",
+  "profile": "boundary",
+  "eventCount": 42,
+  "parseErrors": [],
+  "typeHistogram": {
+    "session/start": 1,
+    "x/agnes/code-mode/kernel": 1,
+    "inbox": 2,
+    "user/message": 2,
+    "turn/start": 1,
+    "x/host/session-title": 3,
+    "budget.state": 2,
+    "x/core/op-mark": 2,
+    "x/core/context-breakdown": 2,
+    "step/start": 2,
+    "request/header": 2,
+    "effect/intent": 3,
+    "request/sent": 2,
+    "assistant/message": 2,
+    "tool/call": 1,
+    "cost/ledger": 3,
+    "effect/settled": 3,
+    "tool/result": 1,
+    "verifier/signal": 3,
+    "step/end": 2,
+    "assistant/output": 1,
+    "turn/end": 1
+  },
+  "prompt": "请只读取文件 fixtures/boundary/empty.txt，不要修改任何文件。然后回答两个问题，每个答案单独一行：(1) 该文件的字节数（size in bytes）；(2) 该文件中换行符 LF（即 \\n）出现的次数。若文件为空请如实回答 0，不要假设它含有内容。",
+  "finalAnswer": "The file is empty (0 bytes, no LF characters).\n\n0\n0",
+  "model": {
+    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "id": "agnes-3.0-flash"
+  },
+  "modelsUsed": [
+    "agnes-3.0-flash"
+  ],
+  "toolCounts": {
+    "read": 1
+  },
+  "toolCallCount": 1,
+  "toolChain": [
+    {
+      "index": 1,
+      "seq": 20,
+      "name": "read",
+      "toolUseId": "t0-bf88be7885eddbf72c451a83e39723fa",
+      "startedAt": "2026-10-03T06:19:57.504Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 2,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    }
+  ],
+  "errorResults": [],
+  "approvalEvents": [],
+  "maxStepInTurn": 2,
+  "stepEnds": [
+    {
+      "seq": 25,
+      "turn": 1,
+      "step": 1
+    },
+    {
+      "seq": 37,
+      "turn": 1,
+      "step": 2
+    }
+  ],
+  "turnEndReason": "completed",
+  "verifier": {
+    "toolLevelCount": 1,
+    "toolLevelAllPassed": true,
+    "turnLevelVerdicts": [
+      "pass"
+    ]
+  },
+  "ledger": [
+    {
+      "seq": 18,
+      "ts": "2026-10-03T06:19:57.485Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 918,
+        "output": 29,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1794,
+        "durationMs": 3462
+      },
+      "status": 200,
+      "requestId": "6ce429ad8136869a631a773d9b427424",
+      "credits": 0
+    },
+    {
+      "seq": 35,
+      "ts": "2026-10-03T06:20:00.715Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 961,
+        "output": 17,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 2990,
+        "durationMs": 3148
+      },
+      "status": 200,
+      "requestId": "22d54d05f22d340e7d3cad95a9ebed43",
+      "credits": 0
+    }
+  ],
+  "totalTokens": {
+    "input": 2476,
+    "output": 54,
+    "cacheRead": 14848
+  },
+  "assertions": [
+    {
+      "name": "仅使用 Agnes 模型（agnes-*）",
+      "pass": true,
+      "detail": "agnes-3.0-flash"
+    },
+    {
+      "name": "推理请求发出且返回 200",
+      "pass": true,
+      "detail": "status=200 req=6ce429ad8136869a631a773d9b427424; status=200 req=22d54d05f22d340e7d3cad95a9ebed43"
+    },
+    {
+      "name": "存在工具调用链",
+      "pass": true,
+      "detail": "1 次调用"
+    },
+    {
+      "name": "工具返回与调用一一对应",
+      "pass": true,
+      "detail": "0 次缺返回"
+    },
+    {
+      "name": "终态符合预期（completed）",
+      "pass": true,
+      "detail": "实际 turn/end reason = completed"
+    },
+    {
+      "name": "连续步骤 >= 2",
+      "pass": true,
+      "detail": "实际最大 step=2"
+    },
+    {
+      "name": "回合级校验判定符合预期（pass）",
+      "pass": true,
+      "detail": "实际判定: pass"
+    },
+    {
+      "name": "工具调用无错误返回",
+      "pass": true,
+      "detail": "0 条错误返回（其中被拒绝 0 条）"
+    },
+    {
+      "name": "最终回答包含期望数值（0）",
+      "pass": true,
+      "detail": "全部命中"
+    }
+  ]
+}

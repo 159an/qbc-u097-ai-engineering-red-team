@@ -1,0 +1,18 @@
+{
+  "name": "@qbc/verification-tools",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "verificationTools",
+        "id": "ext:qbc/verification-tools",
+        "inject": [
+          "extension"
+        ]
+      }
+    ]
+  }
+}

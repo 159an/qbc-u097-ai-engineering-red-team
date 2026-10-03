@@ -1,0 +1,178 @@
+{
+  "generatedAt": "2026-10-03T06:24:15.568Z",
+  "source": "N1.trajectory.raw.json",
+  "profile": "normal",
+  "eventCount": 42,
+  "parseErrors": [],
+  "typeHistogram": {
+    "session/start": 1,
+    "x/agnes/code-mode/kernel": 1,
+    "inbox": 2,
+    "user/message": 2,
+    "turn/start": 1,
+    "x/host/session-title": 3,
+    "budget.state": 2,
+    "x/core/op-mark": 2,
+    "x/core/context-breakdown": 2,
+    "step/start": 2,
+    "request/header": 2,
+    "effect/intent": 3,
+    "request/sent": 2,
+    "assistant/message": 2,
+    "tool/call": 1,
+    "cost/ledger": 3,
+    "effect/settled": 3,
+    "tool/result": 1,
+    "verifier/signal": 3,
+    "step/end": 2,
+    "assistant/output": 1,
+    "turn/end": 1
+  },
+  "prompt": "请只读取文件 fixtures/normal/measurements.csv，不要修改任何文件。然后回答三个问题，每个答案单独一行：(1) 数据行数（不含表头）；(2) temperature_c 列的算术平均值；(3) pressure_kpa 列的算术平均值。两列平均值都保留 4 位小数。",
+  "finalAnswer": "数据行数（不含表头）：12\n\ntemperature_c 平均值：21.4917\n\npressure_kpa 平均值：101.3083",
+  "model": {
+    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "id": "agnes-3.0-flash"
+  },
+  "modelsUsed": [
+    "agnes-3.0-flash"
+  ],
+  "toolCounts": {
+    "read": 1
+  },
+  "toolCallCount": 1,
+  "toolChain": [
+    {
+      "index": 1,
+      "seq": 20,
+      "name": "read",
+      "toolUseId": "t0-e1fb0da834a9a0c75d9f1dd7dc3a16c7",
+      "startedAt": "2026-10-03T06:19:47.811Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 258,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    }
+  ],
+  "errorResults": [],
+  "approvalEvents": [],
+  "maxStepInTurn": 2,
+  "stepEnds": [
+    {
+      "seq": 25,
+      "turn": 1,
+      "step": 1
+    },
+    {
+      "seq": 37,
+      "turn": 1,
+      "step": 2
+    }
+  ],
+  "turnEndReason": "completed",
+  "verifier": {
+    "toolLevelCount": 1,
+    "toolLevelAllPassed": true,
+    "turnLevelVerdicts": [
+      "pass"
+    ]
+  },
+  "ledger": [
+    {
+      "seq": 18,
+      "ts": "2026-10-03T06:19:47.787Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 918,
+        "output": 30,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 997,
+        "durationMs": 1010
+      },
+      "status": 200,
+      "requestId": "0a4e45a5b8519ef729a58661b148444a",
+      "credits": 0
+    },
+    {
+      "seq": 35,
+      "ts": "2026-10-03T06:19:49.458Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 1180,
+        "output": 39,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 968,
+        "durationMs": 1584
+      },
+      "status": 200,
+      "requestId": "05272109b34896100e5d6b8f6a857c60",
+      "credits": 0
+    }
+  ],
+  "totalTokens": {
+    "input": 2719,
+    "output": 79,
+    "cacheRead": 14848
+  },
+  "assertions": [
+    {
+      "name": "仅使用 Agnes 模型（agnes-*）",
+      "pass": true,
+      "detail": "agnes-3.0-flash"
+    },
+    {
+      "name": "推理请求发出且返回 200",
+      "pass": true,
+      "detail": "status=200 req=0a4e45a5b8519ef729a58661b148444a; status=200 req=05272109b34896100e5d6b8f6a857c60"
+    },
+    {
+      "name": "存在工具调用链",
+      "pass": true,
+      "detail": "1 次调用"
+    },
+    {
+      "name": "工具返回与调用一一对应",
+      "pass": true,
+      "detail": "0 次缺返回"
+    },
+    {
+      "name": "工具级校验全部通过",
+      "pass": true,
+      "detail": "1 条 tool 级 signal"
+    },
+    {
+      "name": "终态符合预期（completed）",
+      "pass": true,
+      "detail": "实际 turn/end reason = completed"
+    },
+    {
+      "name": "连续步骤 >= 2",
+      "pass": true,
+      "detail": "实际最大 step=2"
+    },
+    {
+      "name": "工具调用无错误返回",
+      "pass": true,
+      "detail": "0 条错误返回（其中被拒绝 0 条）"
+    },
+    {
+      "name": "最终回答包含期望数值（12/21.6667/101.3417）",
+      "pass": false,
+      "detail": "缺失: 21.6667, 101.3417"
+    }
+  ]
+}

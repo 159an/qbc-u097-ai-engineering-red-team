@@ -1,11 +1,16 @@
+# ============================================================================
+# QBC / U097 — 忽略规则
+# 原则：凭据与运行产物绝不入库；证据与可复现材料必须入库。
+# ============================================================================
+
 # ---- 第三方运行底座（不入库；获奖开源时按 REPRODUCE 说明自行构建） ----
 agh/
 vendor/
+agh-build/
 
 # ---- 本机专属条目（环境路径与本机工具，不进作品仓库） ----
 .scratch/
 notes/
-logs/
 AGH-使用说明.md
 start-agh.cmd
 stop-agh.cmd
@@ -17,15 +22,51 @@ node_modules/
 .npm-cache/
 .pnpm-store/
 .node-gyp/
+dist/
+.venv/
+venv/
 
 # ---- 凭据与运行产物：任何情况下都不得进仓库 ----
 .agh/
 .agh-*/
+data/
 .secrets/
+secrets/
+runtime/
+work/
 **/configuration.json
 **/configuration-lock.sqlite
 __pycache__/
 *.pyc
+*.key
+*.pem
 .env
 .env.*
+
+# ============================================================================
+# 日志：默认不入库，但 evidence/ 下的是「运行证据」与「时间与版本记录」，必须提交。
+# 先全量忽略，再对 evidence/logs 定向反忽略。
+# 注意：反忽略必须同时放开目录本身（!evidence/logs/），只写 !evidence/logs/**
+# 是不够的——被排除目录中的文件无法通过反忽略重新纳入。
+# ============================================================================
 *.log
+logs/
+!evidence/logs/
+!evidence/logs/**
+evidence/logs/workbench-*.log
+
+# ============================================================================
+# Agent 原始轨迹导出（含本地绝对路径与用户名，仅作提交材料，不进公开仓库）
+# 公开仓库请使用 tools/analyze-trajectory.mjs --sanitize 生成的 *.sanitized.jsonl
+# 用 *trajectory 而非 *.trajectory：文件名可能是 task01-trajectory.raw.json，
+# 连字符前缀不会被 *.trajectory 匹配到。
+# ============================================================================
+*trajectory.raw.json
+
+# ---- 投稿打包（体积大，且含视频） ----
+submission/*.zip
+
+# ---- 系统文件 ----
+Thumbs.db
+Desktop.ini
+.DS_Store

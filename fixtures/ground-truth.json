@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-10-03T06:18:25.727Z",
+  "note": "Computed by tools/make-fixtures.mjs from the bytes actually written. Do not hand-edit.",
+  "normal": {
+    "file": "fixtures/normal/measurements.csv",
+    "dataRowCount": 12,
+    "temperatureMeanC": 21.6667,
+    "pressureMeanKpa": 101.3417,
+    "bytes": 229,
+    "lf": 13,
+    "cr": 0
+  },
+  "boundary": {
+    "empty": {
+      "file": "fixtures/boundary/empty.txt",
+      "bytes": 0,
+      "lf": 0,
+      "cr": 0
+    },
+    "noTrailingNewline": {
+      "file": "fixtures/boundary/no-trailing-newline.txt",
+      "textLineCount": 3,
+      "bytes": 16,
+      "lf": 2,
+      "cr": 0
+    },
+    "crlf": {
+      "file": "fixtures/boundary/crlf.txt",
+      "visualLineCount": 3,
+      "bytes": 20,
+      "lf": 3,
+      "cr": 3
+    }
+  },
+  "failure": {
+    "missingPath": "fixtures/failure/does-not-exist.txt",
+    "forbiddenPath": "fixtures/failure/must-not-be-created.txt",
+    "forbiddenMustNotExist": true
+  }
+}
