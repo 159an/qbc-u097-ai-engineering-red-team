@@ -1,0 +1,364 @@
+{
+  "generatedAt": "2026-10-03T06:23:51.828Z",
+  "source": "task01-trajectory.raw.json",
+  "profile": "normal",
+  "eventCount": 116,
+  "parseErrors": [],
+  "typeHistogram": {
+    "session/start": 1,
+    "x/agnes/code-mode/kernel": 1,
+    "inbox": 2,
+    "user/message": 2,
+    "turn/start": 1,
+    "x/host/session-title": 3,
+    "budget.state": 3,
+    "x/core/op-mark": 3,
+    "x/core/context-breakdown": 3,
+    "step/start": 3,
+    "request/header": 3,
+    "effect/intent": 15,
+    "request/sent": 3,
+    "assistant/output": 8,
+    "assistant/message": 3,
+    "tool/call": 12,
+    "cost/ledger": 4,
+    "effect/settled": 15,
+    "tool/result": 12,
+    "verifier/signal": 15,
+    "step/end": 3,
+    "turn/end": 1
+  },
+  "prompt": "只读取当前项目，不要修改任何文件、不要执行安装命令。回答三件事：(1) 这个项目解决什么问题；(2) 顶层目录结构及各自职责；(3) packages/ 下至少 5 个包的名称与职责。",
+  "finalAnswer": "根据当前工作区 `D:\\dshworkplace\\agh` 的文件（包括 `README.md`、`package.json`、`packages/*/package.json` 与目录列表），回答如下。\n\n## 1. 这个项目解决什么问题\n\n**Agnes Harness（AGH）** 是一个“可插拔 Agent 执行框架”（agent harness / execution foundation），面向 **Forward Deployed Engineering（FDE）**：把 AI 放进客户真实环境、把差异做成可复用能力。\n\n它解决的核心问题（来自 `README.md`）：\n- 客户系统各异：订单查询、知识库、内部 API 等。AGH 把这些业务能力做成 **插件（plugins）**，通过 `MCP` 或后端插件挂载；安装时记录 version、source、integrity digest、capability hash、license。\n- 任务需要在 Web、CLI、SDK 之间共享上下文：AGH 的 CLI / Web / SDK 共享同一套 backend sessions；Web 会话可以在终端 `/resume <id>` 恢复。\n- 客户环境需要可审计性：命令执行前要求 approval（allow once / allow session / deny），轨迹（trajectory）记录每次 model call、tool call、approval 步骤；支持 package trust、tool approvals、execution constraints、session records。\n- 不同角色需要不同界面：Web workbench 可扩展 **frontend panels**，并与后端通过受控调用连接（full-stack plugins）。\n- 每次部署可复用：用 **Skills** 记录任务方法，用插件和 **package lifecycle（install/enable/update/rollback/remove）** 形成可复用能力。\n- 物理设备集成方向：通过 MCP 扩展，让任务流程能接入设备状态读取、动作请求、执行回执；目前为“coming soon”。\n\n简言之：**AGH 不是一个单独的模型，而是把模型、工具、任务状态、业务接口、审批与审计连接起来的执行基础**。\n\n---\n\n## 2. 顶层目录结构及各自职责\n\n从工作区根目录（`D:\\dshworkplace\\agh`）可以看到：\n\n| 顶层条目 | 职责 |\n|---|---|\n| `.gitattributes`, `.github/`, `.gitignore`, `.npmrc` | Git/CI/包管理配置与仓库卫生 |\n| `AGENTS.md`, `CLAUDE.md` | 面向 agent / Claude 工具的说明（仓库约定） |\n| `CONTRIBUTING.md`, `SECURITY.md` | 贡献政策与安全/漏洞报告 |\n| `LICENSE`, `NOTICE` | Apache-2.0 许可与第三方声明 |\n| `README.md`, `README.en.md`, `README.zh-CN.md` | 项目入口说明（英文/中文/全语言） |\n| `biome.json` | Biome 格式化/检查配置 |\n| `docs/` | 文档中心：指南、开发、架构、安全、demo 等 |\n| `examples/` | 可运行示例：后端工具、Web 面板、全栈插件、模拟模型 demo 等 |\n| `node_modules/` | 依赖安装目录（工作区依赖） |\n| `packages/` | 核心源码包（pnpm workspace）；包括 CLI、daemon、web、协议、插件运行时、资源控制等 |\n| `patches/` | 对依赖的补丁（pnpm patch） |\n| `pnpm-lock.yaml`, `pnpm-workspace.yaml` | pnpm workspace 与 lockfile |\n| `start-local-windows.ps1` | Windows 本地启动脚本 |\n| `third-party/` | 第三方组件/资源 |\n| `tools/` | 构建/开发/基准工具脚本 |\n| `tsconfig.base.json`, `tsconfig.config.json`, `tsconfig.json` | TypeScript 项目引用与编译配置 |\n| `vitest.config.ts`, `vitest.shared.ts` | 测试配置（fast/heavy projects） |\n| `package.json` | 根 workspace：`@agnes/harness`，scripts 负责 `test`, `typecheck`, `lint`, `gen:check`, 以及 ledger/artifact benchmark |\n\n---\n\n## 3. `packages/` 下至少 5 个包的名称与职责\n\n从 `packages/` 的 42 个子包中，我选取 5 个有代表性的，读取各自 `package.json` 后总结如下（均位于 `D:\\dshworkplace\\agh\\packages\\<name>`）：\n\n### ① `@agnes/core`\n路径：`packages/core`  \n职责：AGH 的核心抽象层。导出 `src/index.ts`（核心 API）、`./artifacts`（artifact 支持）、`./testkit`（测试工具）。依赖 `protocol`、`protocol-validation`、`extension-api` 等，是插件与系统间共享类型/概念的基础。\n\n### ② `@agnes/daemon`\n路径：`packages/daemon`  \n职责：常驻后台服务 / 运行时入口。导出 `.`, `./local`, `./packages`, `./worker`。依赖 `host`、`package-manager`、`plugin-runtime`、`protocol`、`resource-control-*`、`worker-runtime`、`error-sanitization`、`system-node`。它负责把宿主、包管理、插件运行时、资源控制守护等串成可运行的服务；`build:runtime` 会生成 `dist/agnes-runtime`。\n\n### ③ `@agnes/cli`\n路径：`packages/cli`  \n职责：命令行工具，提供 `agh` 可执行入口。导出 `src/index.ts`，并包含本地/SEA 构建产物（`dist/local`, `dist/sea`）。依赖 `ai`, `base`, `bridges`, `code`, `daemon`, `host`, `protocol`, `sdk`, `system-node`, `resource-control-cli`, `resource-control-runtime`, `cli-tui`, `cli-launch`, `web`。`build:local` 用于生成可在终端直接运行的本地包（如 `node packages/cli/dist/local/agnes.mjs`）。\n\n### ④ `@agnes/plugin-runtime`\n路径：`packages/plugin-runtime`  \n职责：插件加载/执行运行时。导出 `.`, `./host`, `./testkit`。依赖 `cordis`、`cordis-loader`、`typebox` 等。它是 AGH 的“插件运行时”层：负责加载、注册、执行普通后端插件，并提供测试工具。\n\n### ⑤ `@agnes/protocol`\n路径：`packages/protocol`  \n职责：跨组件通信/事件协议与 schema。导出 `.`, `./gen/*`（生成代码目录），并支持 `gen`、`gen:check`、`conformance` 脚本。依赖 `resource-control-contracts`、`protocol-validation`、`typebox` 等。它定义了 AGH 内部事件、消息、契约的校验与生成工具链。\n\n---\n\n### 补充：其他值得注意的包（未逐一读，但可从 `packages/` 目录与 README 判断）\n\n- `@agnes/web-server`：Web 工作台的服务端。  \n- `@agnes/web`, `@agnes/web-ui`, `@agnes/web-units`, `@agnes/web-slots`, `@agnes/web-admin-frame`, `@agnes/web-client`：Web 端 UI 框架/组件。  \n- `@agnes/sdk`：面向外部应用的 SDK（Node/browser）。  \n- `@agnes/resource-control-*`（cli / client-node / contracts / daemon / runtime / store / web / worker）：资源控制与隔离子系统。  \n- `@agnes/extension-api`, `@agnes/mcp-transport-health`, `@agnes/package-manager`, `@agnes/cordis*`：扩展 API、MCP 传输健康、包管理与 Cordis 依赖。  \n- `@agnes/base`, `@agnes/ai`, `@agnes/code`, `@agnes/system-node`, `@agnes/error-sanitization`, `@agnes/worker-runtime`：底层基础、AI 接入、代码处理、系统 Node 集成、错误清洗、worker 运行时。  \n- `@agnes/cli-tui`, `@agnes/cli-launch`, `@agnes/channels`, `@agnes/bridges`, `@agnes/host`, `@agnes/sandbox-remote`：CLI TUI、启动、通道、桥接、宿主与远程沙箱。\n\n以上全部基于只读取当前项目文件（`ls`、`read` 等）得出，未做任何修改、未执行安装或构建命令。",
+  "model": {
+    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "id": "agnes-3.0-flash"
+  },
+  "modelsUsed": [
+    "agnes-3.0-flash"
+  ],
+  "toolCounts": {
+    "ls": 2,
+    "read": 10
+  },
+  "toolCallCount": 12,
+  "toolChain": [
+    {
+      "index": 1,
+      "seq": 24,
+      "name": "ls",
+      "toolUseId": "t2-744fc9c2f6bdf20b4b843355a119e4b3",
+      "startedAt": "2026-10-03T06:10:25.328Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 424,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 2,
+      "seq": 25,
+      "name": "read",
+      "toolUseId": "t0-5d23d02a78dc787ea03317bcd823ebfe",
+      "startedAt": "2026-10-03T06:10:25.338Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 990,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 3,
+      "seq": 26,
+      "name": "ls",
+      "toolUseId": "t3-840358005518decc0d919b92e1e451bf",
+      "startedAt": "2026-10-03T06:10:25.346Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 624,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 4,
+      "seq": 27,
+      "name": "read",
+      "toolUseId": "t1-c3e1c2dc0b9456ef58e925f414426fa6",
+      "startedAt": "2026-10-03T06:10:25.355Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 18269,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 5,
+      "seq": 61,
+      "name": "read",
+      "toolUseId": "t6-e507f7c912afe6d4eb8500f4ccf5216e",
+      "startedAt": "2026-10-03T06:10:31.422Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 1447,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 6,
+      "seq": 62,
+      "name": "read",
+      "toolUseId": "t7-0e192f0b7054fadeb390c0d5ddaf9c4e",
+      "startedAt": "2026-10-03T06:10:31.431Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 553,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 7,
+      "seq": 63,
+      "name": "read",
+      "toolUseId": "t5-acb25ee1286a41aa1df9be86fde5a7ef",
+      "startedAt": "2026-10-03T06:10:31.438Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 2013,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 8,
+      "seq": 64,
+      "name": "read",
+      "toolUseId": "t4-3c12958f597b68ec552b4c8144f45dc0",
+      "startedAt": "2026-10-03T06:10:31.444Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 566,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 9,
+      "seq": 77,
+      "name": "read",
+      "toolUseId": "t9-d10d31a6dc040fa1ecf03451366c632e",
+      "startedAt": "2026-10-03T06:10:31.503Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 927,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 10,
+      "seq": 78,
+      "name": "read",
+      "toolUseId": "t8-6951b0aaae4125de064a7fd9e3f173fa",
+      "startedAt": "2026-10-03T06:10:31.510Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 705,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 11,
+      "seq": 79,
+      "name": "read",
+      "toolUseId": "t10-64b68ca7a199c812b154705e17933d9e",
+      "startedAt": "2026-10-03T06:10:31.519Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 243,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 12,
+      "seq": 80,
+      "name": "read",
+      "toolUseId": "t11-9322d5a1a7cf748b307267fc1ec3bb39",
+      "startedAt": "2026-10-03T06:10:31.525Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 796,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    }
+  ],
+  "errorResults": [],
+  "approvalEvents": [],
+  "maxStepInTurn": 3,
+  "stepEnds": [
+    {
+      "seq": 41,
+      "turn": 1,
+      "step": 1
+    },
+    {
+      "seq": 94,
+      "turn": 1,
+      "step": 2
+    },
+    {
+      "seq": 111,
+      "turn": 1,
+      "step": 3
+    }
+  ],
+  "turnEndReason": "completed",
+  "verifier": {
+    "toolLevelCount": 12,
+    "toolLevelAllPassed": true,
+    "turnLevelVerdicts": [
+      "pass"
+    ]
+  },
+  "ledger": [
+    {
+      "seq": 22,
+      "ts": "2026-10-03T06:10:25.291Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 6268,
+        "output": 134,
+        "cacheRead": 2048,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1624,
+        "durationMs": 3812
+      },
+      "status": 200,
+      "requestId": "41ebbd89251b09676f629e2e8c4694cd",
+      "credits": 0
+    },
+    {
+      "seq": 59,
+      "ts": "2026-10-03T06:10:31.389Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 5952,
+        "output": 305,
+        "cacheRead": 8192,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 3321,
+        "durationMs": 5919
+      },
+      "status": 200,
+      "requestId": "ee162a88a73d2548b07b7c45cbd4cc34",
+      "credits": 0
+    },
+    {
+      "seq": 109,
+      "ts": "2026-10-03T06:11:04.963Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 3167,
+        "output": 1845,
+        "cacheRead": 14080,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 3431,
+        "durationMs": 33340
+      },
+      "status": 200,
+      "requestId": "58f6c6e878e737ebce211f82e79b1f2e",
+      "credits": 0
+    }
+  ],
+  "totalTokens": {
+    "input": 16795,
+    "output": 2290,
+    "cacheRead": 24320
+  },
+  "assertions": [
+    {
+      "name": "仅使用 Agnes 模型（agnes-*）",
+      "pass": true,
+      "detail": "agnes-3.0-flash"
+    },
+    {
+      "name": "推理请求发出且返回 200",
+      "pass": true,
+      "detail": "status=200 req=41ebbd89251b09676f629e2e8c4694cd; status=200 req=ee162a88a73d2548b07b7c45cbd4cc34; status=200 req=58f6c6e878e737ebce211f82e79b1f2e"
+    },
+    {
+      "name": "存在工具调用链",
+      "pass": true,
+      "detail": "12 次调用"
+    },
+    {
+      "name": "工具返回与调用一一对应",
+      "pass": true,
+      "detail": "0 次缺返回"
+    },
+    {
+      "name": "工具级校验全部通过",
+      "pass": true,
+      "detail": "12 条 tool 级 signal"
+    },
+    {
+      "name": "工具调用无错误返回",
+      "pass": true,
+      "detail": "0 条错误"
+    },
+    {
+      "name": "终态符合预期（completed）",
+      "pass": true,
+      "detail": "实际 turn/end reason = completed"
+    },
+    {
+      "name": "连续步骤 >= 3",
+      "pass": true,
+      "detail": "实际最大 step=3"
+    }
+  ]
+}

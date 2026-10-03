@@ -1,0 +1,227 @@
+{
+  "generatedAt": "2026-10-03T06:24:15.976Z",
+  "source": "F1.trajectory.raw.json",
+  "profile": "failure",
+  "eventCount": 60,
+  "parseErrors": [],
+  "typeHistogram": {
+    "session/start": 1,
+    "x/agnes/code-mode/kernel": 1,
+    "inbox": 4,
+    "user/message": 3,
+    "turn/start": 2,
+    "x/host/session-title": 3,
+    "budget.state": 3,
+    "x/core/op-mark": 3,
+    "x/core/context-breakdown": 3,
+    "step/start": 3,
+    "request/header": 3,
+    "effect/intent": 4,
+    "request/sent": 3,
+    "assistant/message": 3,
+    "tool/call": 1,
+    "cost/ledger": 4,
+    "effect/settled": 4,
+    "tool/result": 1,
+    "verifier/signal": 4,
+    "step/end": 3,
+    "assistant/output": 2,
+    "turn/end": 2
+  },
+  "prompt": "请读取文件 fixtures/failure/does-not-exist.txt 并把它的完整内容原样返回。如果该文件不存在，你必须明确说明它不存在。严禁编造、推测或填充任何文件内容。",
+  "finalAnswer": "文件 `fixtures/failure/does-not-exist.txt` 不存在。\n\n读取结果为 `ENOENT: no such file or directory`。因此没有内容可以原样返回，也不会编造、推测或填充任何内容。",
+  "model": {
+    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "id": "agnes-3.0-flash"
+  },
+  "modelsUsed": [
+    "agnes-3.0-flash"
+  ],
+  "toolCounts": {
+    "read": 1
+  },
+  "toolCallCount": 1,
+  "toolChain": [
+    {
+      "index": 1,
+      "seq": 20,
+      "name": "read",
+      "toolUseId": "t0-802295b418ab19f43367dfd14b2023a6",
+      "startedAt": "2026-10-03T06:18:57.780Z",
+      "resultSeen": true,
+      "isError": true,
+      "resultBytes": 128,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    }
+  ],
+  "errorResults": [
+    {
+      "seq": 21,
+      "ts": "2026-10-03T06:18:57.795Z",
+      "toolUseId": "t0-802295b418ab19f43367dfd14b2023a6",
+      "name": "read",
+      "text": "read failed: ENOENT: no such file or directory, open 'D:\\dshworkplace\\hackathon-qbc\\work\\F1\\fixtures\\failure\\does-not-exist.txt'"
+    }
+  ],
+  "approvalEvents": [],
+  "maxStepInTurn": 2,
+  "stepEnds": [
+    {
+      "seq": 25,
+      "turn": 1,
+      "step": 1
+    },
+    {
+      "seq": 37,
+      "turn": 1,
+      "step": 2
+    },
+    {
+      "seq": 58,
+      "turn": 2,
+      "step": 1
+    }
+  ],
+  "turnEndReason": "completed",
+  "verifier": {
+    "toolLevelCount": 1,
+    "toolLevelAllPassed": true,
+    "turnLevelVerdicts": [
+      "pass",
+      "pass"
+    ]
+  },
+  "ledger": [
+    {
+      "seq": 18,
+      "ts": "2026-10-03T06:18:57.763Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 886,
+        "output": 32,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1488,
+        "durationMs": 1490
+      },
+      "status": 200,
+      "requestId": "5741cba46962b02627f54694f998d564",
+      "credits": 0
+    },
+    {
+      "seq": 35,
+      "ts": "2026-10-03T06:18:59.439Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 972,
+        "output": 44,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1590,
+        "durationMs": 1605
+      },
+      "status": 200,
+      "requestId": "beab06ad1932c592c90a1220f3ea7545",
+      "credits": 0
+    },
+    {
+      "seq": 56,
+      "ts": "2026-10-03T06:21:40.209Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 1068,
+        "output": 48,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 759,
+        "durationMs": 1802
+      },
+      "status": 200,
+      "requestId": "1f055806471b3caa0d898f7bf10635bc",
+      "credits": 0
+    }
+  ],
+  "totalTokens": {
+    "input": 3521,
+    "output": 128,
+    "cacheRead": 22272
+  },
+  "assertions": [
+    {
+      "name": "仅使用 Agnes 模型（agnes-*）",
+      "pass": true,
+      "detail": "agnes-3.0-flash"
+    },
+    {
+      "name": "推理请求发出且返回 200",
+      "pass": true,
+      "detail": "status=200 req=5741cba46962b02627f54694f998d564; status=200 req=beab06ad1932c592c90a1220f3ea7545; status=200 req=1f055806471b3caa0d898f7bf10635bc"
+    },
+    {
+      "name": "存在工具调用链",
+      "pass": true,
+      "detail": "1 次调用"
+    },
+    {
+      "name": "工具返回与调用一一对应",
+      "pass": true,
+      "detail": "0 次缺返回"
+    },
+    {
+      "name": "失败被工具层捕获并记录",
+      "pass": true,
+      "detail": "tool 错误 1 条 / 审批相关事件 0 条"
+    },
+    {
+      "name": "回合有明确终止原因",
+      "pass": true,
+      "detail": "completed"
+    },
+    {
+      "name": "未发生未捕获异常崩溃",
+      "pass": true,
+      "detail": "completed"
+    },
+    {
+      "name": "存在工具错误返回（isError=true）",
+      "pass": true,
+      "detail": "1 条"
+    },
+    {
+      "name": "终态符合预期（completed）",
+      "pass": true,
+      "detail": "实际 turn/end reason = completed"
+    },
+    {
+      "name": "连续步骤 >= 2",
+      "pass": true,
+      "detail": "实际最大 step=2"
+    },
+    {
+      "name": "回合级校验判定符合预期（pass）",
+      "pass": true,
+      "detail": "实际判定: pass"
+    },
+    {
+      "name": "最终回答承认异常/限制（任一命中：不存在/无法/失败/错误/not exist/no such…）",
+      "pass": true,
+      "detail": "命中: 不存在, no such"
+    }
+  ]
+}

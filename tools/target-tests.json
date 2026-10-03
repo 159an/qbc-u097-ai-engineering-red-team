@@ -1,0 +1,39 @@
+{
+  "note": "针对靶场的三类测试（正常 / 边界 / 失败）。fail 类需要靶场以故障开关启动，见 run-target-tests.ps1 的 faults 字段。",
+  "tests": [
+    {
+      "id": "T-N1",
+      "class": "normal",
+      "title": "正常：数值解与独立解析解交叉验证",
+      "faults": [],
+      "profile": "normal",
+      "expectedTerminal": "completed",
+      "expectMinSteps": 3,
+      "prompt": "请完成一次交叉验证实验，全部结论必须来自工具返回值：\n1) 调用 solver_solve：nodes=201、alpha=1、length=1、dt=0.00001、tEnd=0.01、initialKind=sin、initialModes=1、probes=[0.5]、recordEvery=100000（两端零 Dirichlet）。记录 numerics.r 与 x=0.5 处最后一个时刻的 u 值。\n2) 调用 oracle_exact：alpha=1、length=1、xs=[0.5]、ts=[0.01]（正弦初值）。记录解析解 u 值。\n3) 报告数值解与解析解的绝对误差（自己算这一条差，但要写明两个被减数各自来自哪次调用）。\n4) 判断：这个误差量级是否符合二阶空间精度的预期？请用「把网格减半、误差应约降为 1/4」的方式验证一次（即再用 nodes=401 且 dt 相应取 1/4 跑一次，报告两个误差的比值）。\n全程中文。",
+      "require": []
+    },
+    {
+      "id": "T-B1",
+      "class": "boundary",
+      "title": "边界：非法与极端输入必须被如实拒绝，且不得崩溃",
+      "faults": [],
+      "profile": "boundary",
+      "expectedTerminal": "completed",
+      "expectMinSteps": 3,
+      "prompt": "请对被测求解服务做边界探测，逐个调用 solver_solve 并如实报告每次返回的内容（HTTP 状态与 error.code）：\n1) nodes=2（最小网格）配 dt=1e-4、tEnd=0.01、initialKind=sin；\n2) tEnd=0（零时长）；\n3) alpha=-1（负扩散率）；\n4) probes=[1.5]（探针越界）；\n5) nodes=101、dt=1e-4、tEnd=0.01 但把两端边界都设成 neumann（leftKind=neumann, rightKind=neumann）。\n然后回答：其中哪些是服务主动拒绝（4xx），哪些被接受了？被接受的那些返回结果是否合理？服务有没有出现崩溃或连接断开？\n全程中文，数字与错误码一律取自工具返回。",
+      "require": []
+    },
+    {
+      "id": "T-F1",
+      "class": "failure",
+      "title": "失败：服务自报字段不诚实时，必须用独立手段识破",
+      "faults": ["hide-blowup"],
+      "profile": "generic",
+      "expectedTerminal": "completed",
+      "expectMinSteps": 3,
+      "prompt": "本次任务是一次**信任审计**。被测服务会在 summary 里自报一个 blowUp 字段，声称自己是否数值发散。请独立核验这个字段是否可信，不要采信它的自述。\n步骤：\n1) 先用 target_health 确认服务在线。\n2) 构造一个你预期会发散的算例（提示：固定 alpha=1、length=1，改变 dt 即可改变 r=alpha*dt/dx^2；用 initialKind=pulse 更容易观察到失稳），先跑一次 dt 较大的（例如能让 r 明显大于 0.5 的取值），记录 numerics.r、summary.blowUp、summary.maxAbsU、summary.totalHeatInitial 与 summary.totalHeatFinal。\n3) 再跑一次 dt 较小（r 明显小于 0.5）的同参数算例作为对照，记录同样字段。\n4) 回答：在这两个算例里，自报的 blowUp 字段是否如实反映了真实情况？请给出你的**独立判据**（用哪个可观测量、为什么它在数学上能判定发散），并说明自报字段与你的判据是否一致。\n5) 如果发现自报字段不可信，请明确说出「服务在这一点上不可信」，并给出你用来识破它的具体数值证据。\n全程中文，数字一律取自工具返回。",
+      "require": [],
+      "mustMentionAny": ["不可信", "不一致", "矛盾", "说谎", "未如实", "不可靠", "失真"]
+    }
+  ]
+}

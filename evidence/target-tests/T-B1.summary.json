@@ -1,0 +1,645 @@
+{
+  "generatedAt": "2026-10-03T08:08:40.536Z",
+  "source": "T-B1.trajectory.raw.json",
+  "profile": "boundary",
+  "eventCount": 211,
+  "parseErrors": [],
+  "typeHistogram": {
+    "session/start": 1,
+    "x/agnes/code-mode/kernel": 1,
+    "inbox": 2,
+    "user/message": 2,
+    "turn/start": 1,
+    "x/host/session-title": 3,
+    "budget.state": 12,
+    "x/core/op-mark": 12,
+    "x/core/context-breakdown": 12,
+    "step/start": 12,
+    "request/header": 12,
+    "effect/intent": 18,
+    "request/sent": 12,
+    "assistant/message": 12,
+    "tool/call": 11,
+    "cost/ledger": 13,
+    "effect/settled": 18,
+    "plan.items": 1,
+    "tool/result": 11,
+    "verifier/signal": 18,
+    "step/end": 12,
+    "approval/asked": 5,
+    "approval/decided": 5,
+    "assistant/output": 4,
+    "turn/end": 1
+  },
+  "prompt": "请对被测求解服务做边界探测，逐个调用 solver_solve 并如实报告每次返回的内容（HTTP 状态与 error.code）：\n1) nodes=2（最小网格）配 dt=1e-4、tEnd=0.01、initialKind=sin；\n2) tEnd=0（零时长）；\n3) alpha=-1（负扩散率）；\n4) probes=[1.5]（探针越界）；\n5) nodes=101、dt=1e-4、tEnd=0.01 但把两端边界都设成 neumann（leftKind=neumann, rightKind=neumann）。\n然后回答：其中哪些是服务主动拒绝（4xx），哪些被接受了？被接受的那些返回结果是否合理？服务有没有出现崩溃或连接断开？\n全程中文，数字与错误码一律取自工具返回。",
+  "finalAnswer": "5 次调用全部返回，没有一次崩溃或连接断开。汇总如下。\n\n## 逐次返回结果（HTTP 状态与 error.code 均取自工具）\n\n**1) nodes=2, dt=1e-4, tEnd=0.01, initialKind=sin** — HTTP 200，`ok:true`，无 error。\n- numerics: dx=1, r=0.0001, peclet=0, steps=100\n- summary: maxAbsU=0, minU=0, maxU=0, blowUp=false, totalHeatInitial=0, totalHeatFinal=0, heatDriftRelative=0\n- probes: x=0.5，101 点下采样到 64 点，全部 u=0\n\n**2) tEnd=0（nodes=101 默认）** — HTTP 200，`ok:true`。\n- numerics: dx=0.01, r=1, steps=0\n- summary: maxAbsU=1, totalHeatInitial=0.6365674116287159 = totalHeatFinal，heatDriftRelative=0\n- probes: x=0.5 仅 1 点，u=1（初始值）\n\n**3) alpha=-1** — HTTP 400，`ok:false`，error.code=`E_ALPHA_INVALID`，message=\"alpha must be > 0, got -1\"\n\n**4) probes=[1.5]** — HTTP 400，`ok:false`，error.code=`E_PROBE_RANGE`，message=\"probes must be normalized positions within [0,1], got 1.5\"\n\n**5) nodes=101, dt=1e-4, tEnd=0.01, 双 neumann** — HTTP 200，`ok:true`，无 error（注意：服务没有拒绝它）。\n- numerics: r=1, steps=100\n- summary: **blowUp=true**，maxAbsU=1.4805935716772285e+42，heatDriftRelative=1.5557692922017452e+26\n- probes 序列从 t=0 的 u=1 正常衰减，约 t≈0.0035 起振荡发散（u 在 4.76 → -10.3 → -98.7 → 297.2 … 交替变号且量级爆炸），最终 t=0.01 时 u=-6.021067300093274e+35\n\n## 判定\n\n**服务主动拒绝（4xx）的：2 项**\n- 第 3 项 alpha=-1 → 400 `E_ALPHA_INVALID`\n- 第 4 项 probes=[1.5] → 400 `E_PROBE_RANGE`\n两者都是清晰的 400 入参校验拒绝，错误码语义明确。\n\n**被接受的：3 项（均 200 ok:true）**\n- 第 2 项 tEnd=0：合理。零时长 → steps=0，只返回初始条件（u=1），总热不变，drift=0。这是有意义的边界行为，不是误吞。\n- 第 1 项 nodes=2 配 sin 初始条件：**结果不合理但服务未拒绝**。dx=1，正弦初始场只采样在 x=0 和 x=1 两个网格点上，sin(0)=sin(1) 恰好都是 0，于是整个初始条件全 0，热方程演算出全 0。服务没有因\"网格过粗/初始场退化\"报错，静默返回了全零解。\n- 第 5 项 双 neumann + r=1 + dt 偏大：**服务没有做稳定性检查，放行的数值方案直接发散**。r=alpha*dt/dx²=1 时显式 FTCS 格式处于稳定边界（要求 r≤0.5），服务却照常跑了 100 步。好在它没有伪装正常——summary 里如实标了 blowUp=true，heatDriftRelative≈1.56e+26 也如实暴露了总热守恒被破坏。\n\n**崩溃 / 连接断开：没有。** 5 次调用全部返回结构化 JSON（ok:true 或 ok:false），无一次工具层失败或连接中断。\n\n**结论**：服务对\"物理非法输入\"（负扩散率、越界探针）会明确 400 拒绝；但对\"数值上会坏掉的合法入参\"（退化网格 + 恰好零初始场、不稳定格式 + 双 Neumann）只接受并求解，靠 blowUp/heatDrift 等输出字段把坏结果暴露出来，而不是用 4xx 挡住。tEnd=0 是被接受且合理的边界情形。",
+  "model": {
+    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "id": "agnes-3.0-flash"
+  },
+  "modelsUsed": [
+    "agnes-3.0-flash"
+  ],
+  "toolCounts": {
+    "todo": 1,
+    "solver_solve": 5,
+    "(名称未记录)": 5
+  },
+  "toolCallCount": 11,
+  "toolChain": [
+    {
+      "index": 1,
+      "seq": 20,
+      "name": "todo",
+      "toolUseId": "t0-6ecb1dfa59c0843f17f9ed2a1fccf04a",
+      "startedAt": "2026-10-03T08:07:35.096Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 45,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 2,
+      "seq": 38,
+      "name": "solver_solve",
+      "toolUseId": "t1-ecc34263294230baaf3c72a80e5010ee",
+      "startedAt": "2026-10-03T08:07:41.481Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 1825,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 3,
+      "seq": 57,
+      "name": "(名称未记录)",
+      "toolUseId": "t2-686e847952ea6c3421a22743446e2b72",
+      "startedAt": "2026-10-03T08:07:44.736Z",
+      "resultSeen": true,
+      "isError": true,
+      "resultBytes": 17,
+      "denied": true,
+      "verdicts": [],
+      "allPassed": false
+    },
+    {
+      "index": 4,
+      "seq": 71,
+      "name": "solver_solve",
+      "toolUseId": "t3-956ac110d27909308bc42372bfb4ef45",
+      "startedAt": "2026-10-03T08:07:48.327Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 413,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 5,
+      "seq": 90,
+      "name": "(名称未记录)",
+      "toolUseId": "t4-e5e65df52e81925403e7d49680a26ebe",
+      "startedAt": "2026-10-03T08:07:53.190Z",
+      "resultSeen": true,
+      "isError": true,
+      "resultBytes": 17,
+      "denied": true,
+      "verdicts": [],
+      "allPassed": false
+    },
+    {
+      "index": 6,
+      "seq": 104,
+      "name": "solver_solve",
+      "toolUseId": "t5-58185998c8e88ec3f1b4ced66a55b86b",
+      "startedAt": "2026-10-03T08:07:54.902Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 102,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 7,
+      "seq": 123,
+      "name": "(名称未记录)",
+      "toolUseId": "t6-3d03e6da4ffef6d2f1ac03af9111d431",
+      "startedAt": "2026-10-03T08:08:00.437Z",
+      "resultSeen": true,
+      "isError": true,
+      "resultBytes": 17,
+      "denied": true,
+      "verdicts": [],
+      "allPassed": false
+    },
+    {
+      "index": 8,
+      "seq": 137,
+      "name": "solver_solve",
+      "toolUseId": "t7-a9dca93f4c6f7d7bdab5184853a01281",
+      "startedAt": "2026-10-03T08:08:05.809Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 132,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 9,
+      "seq": 156,
+      "name": "(名称未记录)",
+      "toolUseId": "t8-b1abac5227bd832285d7942001982cf3",
+      "startedAt": "2026-10-03T08:08:09.961Z",
+      "resultSeen": true,
+      "isError": true,
+      "resultBytes": 17,
+      "denied": true,
+      "verdicts": [],
+      "allPassed": false
+    },
+    {
+      "index": 10,
+      "seq": 170,
+      "name": "solver_solve",
+      "toolUseId": "t9-822a1abf765fcecaa602c7030b4118f9",
+      "startedAt": "2026-10-03T08:08:11.926Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 3079,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 11,
+      "seq": 189,
+      "name": "(名称未记录)",
+      "toolUseId": "t10-461fcaca4bf55e6463ae9850fc12836c",
+      "startedAt": "2026-10-03T08:08:16.681Z",
+      "resultSeen": true,
+      "isError": true,
+      "resultBytes": 17,
+      "denied": true,
+      "verdicts": [],
+      "allPassed": false
+    }
+  ],
+  "errorResults": [
+    {
+      "seq": 57,
+      "ts": "2026-10-03T08:07:44.736Z",
+      "toolUseId": "t2-686e847952ea6c3421a22743446e2b72",
+      "name": null,
+      "text": "approval rejected"
+    },
+    {
+      "seq": 90,
+      "ts": "2026-10-03T08:07:53.190Z",
+      "toolUseId": "t4-e5e65df52e81925403e7d49680a26ebe",
+      "name": null,
+      "text": "approval rejected"
+    },
+    {
+      "seq": 123,
+      "ts": "2026-10-03T08:08:00.437Z",
+      "toolUseId": "t6-3d03e6da4ffef6d2f1ac03af9111d431",
+      "name": null,
+      "text": "approval rejected"
+    },
+    {
+      "seq": 156,
+      "ts": "2026-10-03T08:08:09.961Z",
+      "toolUseId": "t8-b1abac5227bd832285d7942001982cf3",
+      "name": null,
+      "text": "approval rejected"
+    },
+    {
+      "seq": 189,
+      "ts": "2026-10-03T08:08:16.681Z",
+      "toolUseId": "t10-461fcaca4bf55e6463ae9850fc12836c",
+      "name": null,
+      "text": "approval rejected"
+    }
+  ],
+  "approvalEvents": [
+    {
+      "seq": 55,
+      "type": "approval/asked",
+      "origin": "system"
+    },
+    {
+      "seq": 56,
+      "type": "approval/decided",
+      "origin": "system"
+    },
+    {
+      "seq": 88,
+      "type": "approval/asked",
+      "origin": "system"
+    },
+    {
+      "seq": 89,
+      "type": "approval/decided",
+      "origin": "system"
+    },
+    {
+      "seq": 121,
+      "type": "approval/asked",
+      "origin": "system"
+    },
+    {
+      "seq": 122,
+      "type": "approval/decided",
+      "origin": "system"
+    },
+    {
+      "seq": 154,
+      "type": "approval/asked",
+      "origin": "system"
+    },
+    {
+      "seq": 155,
+      "type": "approval/decided",
+      "origin": "system"
+    },
+    {
+      "seq": 187,
+      "type": "approval/asked",
+      "origin": "system"
+    },
+    {
+      "seq": 188,
+      "type": "approval/decided",
+      "origin": "system"
+    }
+  ],
+  "maxStepInTurn": 12,
+  "stepEnds": [
+    {
+      "seq": 26,
+      "turn": 1,
+      "step": 1
+    },
+    {
+      "seq": 43,
+      "turn": 1,
+      "step": 2
+    },
+    {
+      "seq": 59,
+      "turn": 1,
+      "step": 3
+    },
+    {
+      "seq": 76,
+      "turn": 1,
+      "step": 4
+    },
+    {
+      "seq": 92,
+      "turn": 1,
+      "step": 5
+    },
+    {
+      "seq": 109,
+      "turn": 1,
+      "step": 6
+    },
+    {
+      "seq": 125,
+      "turn": 1,
+      "step": 7
+    },
+    {
+      "seq": 142,
+      "turn": 1,
+      "step": 8
+    },
+    {
+      "seq": 158,
+      "turn": 1,
+      "step": 9
+    },
+    {
+      "seq": 175,
+      "turn": 1,
+      "step": 10
+    },
+    {
+      "seq": 191,
+      "turn": 1,
+      "step": 11
+    },
+    {
+      "seq": 206,
+      "turn": 1,
+      "step": 12
+    }
+  ],
+  "turnEndReason": "completed",
+  "verifier": {
+    "toolLevelCount": 6,
+    "toolLevelAllPassed": true,
+    "turnLevelVerdicts": [
+      "pass"
+    ]
+  },
+  "ledger": [
+    {
+      "seq": 18,
+      "ts": "2026-10-03T08:07:35.081Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 2591,
+        "output": 178,
+        "cacheRead": 7168,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 5962,
+        "durationMs": 5971
+      },
+      "status": 200,
+      "requestId": "8bc5be71f9fff85c68db125339575575",
+      "credits": 0
+    },
+    {
+      "seq": 36,
+      "ts": "2026-10-03T08:07:41.461Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 2797,
+        "output": 72,
+        "cacheRead": 7168,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 5719,
+        "durationMs": 6316
+      },
+      "status": 200,
+      "requestId": "62de4d226fa42d0aa6039ef4a214d0b5",
+      "credits": 0
+    },
+    {
+      "seq": 53,
+      "ts": "2026-10-03T08:07:44.700Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 1629,
+        "output": 178,
+        "cacheRead": 9728,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 3161,
+        "durationMs": 3163
+      },
+      "status": 200,
+      "requestId": "d4e464f891923c4849204b8c977095c5",
+      "credits": 0
+    },
+    {
+      "seq": 69,
+      "ts": "2026-10-03T08:07:48.306Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 286,
+        "output": 41,
+        "cacheRead": 11264,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 3256,
+        "durationMs": 3529
+      },
+      "status": 200,
+      "requestId": "fba4de862ecc6d1e1bd929caf3c1e098",
+      "credits": 0
+    },
+    {
+      "seq": 86,
+      "ts": "2026-10-03T08:07:53.161Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 610,
+        "output": 178,
+        "cacheRead": 11264,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 4670,
+        "durationMs": 4772
+      },
+      "status": 200,
+      "requestId": "3f2a829d34b26d55f3a3f17dbeae04aa",
+      "credits": 0
+    },
+    {
+      "seq": 102,
+      "ts": "2026-10-03T08:07:54.873Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 291,
+        "output": 42,
+        "cacheRead": 11776,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1394,
+        "durationMs": 1648
+      },
+      "status": 200,
+      "requestId": "2e7c4e03f88dd47bfd081aca90b02218",
+      "credits": 0
+    },
+    {
+      "seq": 119,
+      "ts": "2026-10-03T08:08:00.407Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 463,
+        "output": 178,
+        "cacheRead": 11776,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 5411,
+        "durationMs": 5453
+      },
+      "status": 200,
+      "requestId": "4e539842f66f72490b08bb276c16d587",
+      "credits": 0
+    },
+    {
+      "seq": 135,
+      "ts": "2026-10-03T08:08:05.794Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 400,
+        "output": 46,
+        "cacheRead": 12032,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 5317,
+        "durationMs": 5318
+      },
+      "status": 200,
+      "requestId": "e0b6d3c57b405de018db95dcebd3e3f2",
+      "credits": 0
+    },
+    {
+      "seq": 152,
+      "ts": "2026-10-03T08:08:09.931Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 584,
+        "output": 178,
+        "cacheRead": 12032,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 4007,
+        "durationMs": 4064
+      },
+      "status": 200,
+      "requestId": "03a97fcd91f8726e6954032f8baa9fe1",
+      "credits": 0
+    },
+    {
+      "seq": 168,
+      "ts": "2026-10-03T08:08:11.907Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 777,
+        "output": 89,
+        "cacheRead": 12032,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 934,
+        "durationMs": 1906
+      },
+      "status": 200,
+      "requestId": "ef3f93617afdc6f8df7b784092602caf",
+      "credits": 0
+    },
+    {
+      "seq": 185,
+      "ts": "2026-10-03T08:08:16.651Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 3420,
+        "output": 178,
+        "cacheRead": 12032,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 4665,
+        "durationMs": 4667
+      },
+      "status": 200,
+      "requestId": "deee4dcd63782580f7ff0fddf30cf505",
+      "credits": 0
+    },
+    {
+      "seq": 204,
+      "ts": "2026-10-03T08:08:38.632Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 285,
+        "output": 1118,
+        "cacheRead": 15360,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 3205,
+        "durationMs": 21912
+      },
+      "status": 200,
+      "requestId": "538eb0e9eff15980bf0d0c04112639d6",
+      "credits": 0
+    }
+  ],
+  "totalTokens": {
+    "input": 15972,
+    "output": 2487,
+    "cacheRead": 133632
+  },
+  "assertions": [
+    {
+      "name": "仅使用 Agnes 模型（agnes-*）",
+      "pass": true,
+      "detail": "agnes-3.0-flash"
+    },
+    {
+      "name": "推理请求发出且返回 200",
+      "pass": true,
+      "detail": "status=200 req=8bc5be71f9fff85c68db125339575575; status=200 req=62de4d226fa42d0aa6039ef4a214d0b5; status=200 req=d4e464f891923c4849204b8c977095c5; status=200 req=fba4de862ecc6d1e1bd929caf3c1e098; status=200 req=3f2a829d34b26d55f3a3f17dbeae04aa; status=200 req=2e7c4e03f88dd47bfd081aca90b02218; status=200 req=4e539842f66f72490b08bb276c16d587; status=200 req=e0b6d3c57b405de018db95dcebd3e3f2; status=200 req=03a97fcd91f8726e6954032f8baa9fe1; status=200 req=ef3f93617afdc6f8df7b784092602caf; status=200 req=deee4dcd63782580f7ff0fddf30cf505; status=200 req=538eb0e9eff15980bf0d0c04112639d6"
+    },
+    {
+      "name": "存在工具调用链",
+      "pass": true,
+      "detail": "11 次调用"
+    },
+    {
+      "name": "工具返回与调用一一对应",
+      "pass": true,
+      "detail": "0 次缺返回"
+    },
+    {
+      "name": "终态符合预期（completed）",
+      "pass": true,
+      "detail": "实际 turn/end reason = completed"
+    },
+    {
+      "name": "连续步骤 >= 3",
+      "pass": true,
+      "detail": "实际最大 step=12"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+﻿{
+    "recordedAt":  "2026-10-03T15:12:00+08:00",
+    "agh":  {
+                "repository":  "https://github.com/AgnesAI-Labs/agnes-harness",
+                "localPath":  "D:\\dshworkplace\\agh",
+                "branch":  "main",
+                "commit":  "e4e782fdde270a484cf5154f9338253acb2cfffd",
+                "commitDate":  "2026-10-03T10:26:22+08:00",
+                "commitSubject":  "fix: session stability, MCP result storage, read-only installation state under full access, and compaction (#115)",
+                "uncommittedFiles":  0
+            },
+    "toolchain":  {
+                      "node":  "v24.19.0",
+                      "pnpmPinned":  "10.34.5",
+                      "pnpmGlobal":  "12.8.1",
+                      "powerShell":  "5.1.26100.9444",
+                      "nodeHeaders":  null
+                  },
+    "build":  {
+                  "entry":  "D:\\dshworkplace\\agh-build\\runtime\\agnes.mjs",
+                  "entrySha256":  "678A7923815DF79B734CEF016EDA5A27F108D91C104BFCA4728A0918F54927F9",
+                  "entryBytes":  16059481
+              },
+    "model":  {
+                  "providerId":  "agnes-ai",
+                  "baseUrl":  "https://api.agnes-ai.cn/v1",
+                  "credentialRef":  "secret://agnes-ai/default",
+                  "credentialSource":  "credential-store（环境变量仅为回落）",
+                  "envVarName":  "AGNES_SECRET_AGNES_AI_DEFAULT",
+                  "credentialValueRecorded":  false,
+                  "envVarPresentInThisRecordRun":  false
+              }
+}
