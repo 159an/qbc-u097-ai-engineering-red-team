@@ -14,7 +14,7 @@
 #   Test-HttpOk [string]$Url [int]$TimeoutMs -> [bool]
 #   Test-ServiceHealth                       -> [hashtable]{Solver,Oracle}
 #   Get-LogDir                               -> [string] (repoRoot\logs, creates it)
-#   Write-ServicePid [string]$Name [int]$Pid -> writes logs\<name>.pid
+#   Write-ServicePid [string]$Name [int]$procId -> writes logs\<name>.pid
 #   Read-ServicePid  [string]$Name           -> [int] (0 if absent / not a number)
 #   Kill-ServicePid  [string]$Name          -> [bool] (true if killed or already gone)
 #   Remove-ServicePid [string]$Name         -> deletes logs\<name>.pid
@@ -43,8 +43,8 @@ function Get-LogDir {
     return $d
 }
 
-function Write-ServicePid([string]$Name, [int]$Pid) {
-    Set-Content -Path (Join-Path (Get-LogDir) "$Name.pid") -Value $Pid.ToString() -Encoding ascii
+function Write-ServicePid([string]$Name, [int]$procId) {
+    Set-Content -Path (Join-Path (Get-LogDir) "$Name.pid") -Value $procId.ToString() -Encoding ascii
 }
 
 function Read-ServicePid([string]$Name) {
