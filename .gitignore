@@ -1,0 +1,31 @@
+# ---- 第三方运行底座（不入库；获奖开源时按 REPRODUCE 说明自行构建） ----
+agh/
+vendor/
+
+# ---- 本机专属条目（环境路径与本机工具，不进作品仓库） ----
+.scratch/
+notes/
+logs/
+AGH-使用说明.md
+start-agh.cmd
+stop-agh.cmd
+scripts/start-agh.ps1
+
+# ---- 包管理与构建缓存 ----
+node_modules/
+.corepack/
+.npm-cache/
+.pnpm-store/
+.node-gyp/
+
+# ---- 凭据与运行产物：任何情况下都不得进仓库 ----
+.agh/
+.agh-*/
+.secrets/
+**/configuration.json
+**/configuration-lock.sqlite
+__pycache__/
+*.pyc
+.env
+.env.*
+*.log
