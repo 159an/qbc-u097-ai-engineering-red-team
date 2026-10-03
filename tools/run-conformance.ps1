@@ -15,15 +15,17 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-$root    = Split-Path -Parent $PSScriptRoot
-$entry   = 'D:\dshworkplace\agh-build\runtime\agnes.mjs'
-$evDir   = Join-Path $root 'evidence\conformance'
-$workDir = Join-Path $root 'work'
+. "$PSScriptRoot\agh-env.ps1"
+$Agh      = Get-AghPaths -RepoRoot (Split-Path -Parent $PSScriptRoot)
+$root     = $Agh.RepoRoot
+$entry    = $Agh.Entry
+$evDir    = Join-Path $root 'evidence\conformance'
+$workDir  = Join-Path $root 'work'
 $fixtures = Join-Path $root 'fixtures'
 
 $env:AGNES_PROFILE = 'local-dev'
 
-if (-not (Test-Path -LiteralPath $entry)) { throw "找不到 AGH 入口: $entry" }
+if (-not $entry) { Write-AghMissing $Agh; exit 1 }
 if (-not (Test-Path -LiteralPath $fixtures)) { throw "找不到 fixtures，请先运行 node tools\make-fixtures.mjs" }
 
 New-Item -ItemType Directory -Force -Path $evDir   | Out-Null
@@ -96,5 +98,6 @@ Write-Host ""
 Write-Host ("运行索引已写入: {0}" -f $summaryPath)
 Write-Host ""
 $results | Select-Object id, class, exitCode, wallSeconds, sessionId, forbiddenArtifactCreated | Format-Table -AutoSize
+
 
 

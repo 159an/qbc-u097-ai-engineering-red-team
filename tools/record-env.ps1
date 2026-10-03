@@ -4,13 +4,17 @@
 # 涉及的值只包含版本号、提交哈希、文件摘要；不读取、不写入任何凭据。
 #
 # 用法：pwsh -File tools\record-env.ps1
+# 路径：不写死本机绝对路径，按 tools\agh-env.ps1 的优先级解析；
+#      可用 AGH_ENTRY / AGH_REPO 环境变量显式指定（见 REPRODUCE.md）。
 
 $ErrorActionPreference = 'Continue'
 
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+. "$PSScriptRoot\agh-env.ps1"
+$Agh         = Get-AghPaths -RepoRoot (Split-Path -Parent $PSScriptRoot)
+$ProjectRoot = $Agh.RepoRoot
 $EvidenceDir = Join-Path $ProjectRoot 'evidence'
-$AghRepo     = 'D:\dshworkplace\agh'
-$AghEntry    = 'D:\dshworkplace\agh-build\runtime\agnes.mjs'
+$AghRepo     = $Agh.Repo
+$AghEntry    = $Agh.Entry
 
 New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
 
@@ -18,8 +22,10 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $iso   = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
 
 # --- AGH 源码版本 ---
-$aghCommit = $null; $aghCommitDate = $null; $aghSubject = $null; $aghBranch = $null
-if (Test-Path (Join-Path $AghRepo '.git')) {
+# $AghRepo / $AghEntry 可能为 $null（AGH 未按约定位置存放时），
+# 因此每处都必须先判空，否则 Join-Path / Test-Path 会直接报错。
+$aghCommit = $null; $aghCommitDate = $null; $aghSubject = $null; $aghBranch = $null; $aghDirty = $null
+if ($AghRepo -and (Test-Path -LiteralPath (Join-Path $AghRepo '.git'))) {
     $aghCommit     = (git -C $AghRepo rev-parse HEAD 2>$null)
     $aghCommitDate = (git -C $AghRepo log -1 --format=%cI 2>$null)
     $aghSubject    = (git -C $AghRepo log -1 --format=%s 2>$null)
@@ -32,7 +38,7 @@ $nodeVersion = (& node --version 2>$null)
 # corepack 只在仓库目录内才解析 packageManager 锁定版本；必须切到 AGH 仓库再取，
 # 否则记录到的是全局 pnpm 版本，与实际用于构建的版本不符。
 $pnpmPinned = $null
-if (Test-Path $AghRepo) {
+if ($AghRepo -and (Test-Path -LiteralPath $AghRepo)) {
     Push-Location -LiteralPath $AghRepo
     try { $pnpmPinned = (& corepack pnpm --version 2>$null) } finally { Pop-Location }
 }
@@ -41,7 +47,7 @@ $psVersion = $PSVersionTable.PSVersion.ToString()
 
 # --- 构建产物摘要 ---
 $entrySha = $null; $entryBytes = $null
-if (Test-Path $AghEntry) {
+if ($AghEntry -and (Test-Path -LiteralPath $AghEntry)) {
     $entrySha   = (Get-FileHash -Algorithm SHA256 -LiteralPath $AghEntry).Hash
     $entryBytes = (Get-Item -LiteralPath $AghEntry).Length
 }
@@ -110,5 +116,7 @@ Write-Host "已写入: $jsonPath"
 Write-Host "已追加: $logPath"
 Write-Host "AGH commit : $aghCommit ($aghCommitDate)"
 Write-Host "agnes.mjs  : $entrySha"
+
+
 
 

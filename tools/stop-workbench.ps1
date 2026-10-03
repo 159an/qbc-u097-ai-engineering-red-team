@@ -2,6 +2,10 @@
 #
 # 只终止「本项目构建产物启动的 serve 实例」，不碰同端口的其他程序。
 # 关闭浏览器不会结束后台服务，需要停止时用这个。
+#
+# 用法：
+#   pwsh -File tools\stop-workbench.ps1
+#   pwsh -File tools\stop-workbench.ps1 -NoUi    # 不弹窗，供脚本调用
 
 param(
     [int]$Port = 4177,
@@ -10,7 +14,9 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-$entry = 'D:\dshworkplace\agh-build\runtime\agnes.mjs'
+# 用同一个解析器取入口路径，保证「认进程」的判断标准与启动器一致。
+. "$PSScriptRoot\agh-env.ps1"
+$entry = (Get-AghPaths -RepoRoot (Split-Path -Parent $PSScriptRoot)).Entry
 
 function Show-Info([string]$message, [string]$title = 'AGH 工作台') {
     if ($NoUi) { Write-Host $message; return }
@@ -31,7 +37,9 @@ foreach ($procId in ($conns | Select-Object -ExpandProperty OwningProcess -Uniqu
     $info = Get-CimInstance Win32_Process -Filter "ProcessId = $procId" -ErrorAction SilentlyContinue
     if ($null -eq $info -or $info.Name -ne 'node.exe') { continue }
     $cmd = [string]$info.CommandLine
-    if ($cmd -like "*$entry*" -and $cmd -like '*serve*') {
+    # 入口路径解析不到时，退化为「含 agnes.mjs 且含 serve」，仍然不会误杀无关进程。
+    $matchEntry = if ($entry) { $cmd -like "*$entry*" } else { $cmd -like '*agnes.mjs*' }
+    if ($matchEntry -and $cmd -like '*serve*') {
         Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
         $stopped += $procId
     }
@@ -48,4 +56,5 @@ if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyCon
     exit 1
 }
 Show-Info "AGH 工作台已停止（PID $($stopped -join ', ')）。"
+
 

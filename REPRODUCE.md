@@ -12,6 +12,34 @@
 | MSVC | Visual Studio C++ Build Tools + Windows SDK | 仅编译 AGH 原生模块时需要 |
 | Python | 3.11+（仅数据处理脚本需要） | 可选 |
 
+### 路径配置（`tools/` 下脚本如何找到 AGH）
+
+脚本**不写死任何本机绝对路径**。AGH 入口按以下优先级解析，取第一个存在的：
+
+| 优先级 | 位置 |
+| --- | --- |
+| 1 | 环境变量 `AGH_ENTRY`（显式指定，优先级最高） |
+| 2 | `<仓库根>\agh\packages\cli\dist\local\agnes.mjs`（AGH 克隆在仓库内） |
+| 3 | `<仓库根的上级>\agh-build\runtime\agnes.mjs`（构建到仓库外） |
+| 4 | `<仓库根>\agh-build\runtime\agnes.mjs`（构建在仓库内） |
+
+相关环境变量：
+
+| 变量 | 用途 |
+| --- | --- |
+| `AGH_ENTRY` | `agnes.mjs` 入口的绝对路径 |
+| `AGH_REPO` | AGH 源码仓库路径（用于记录 commit / 版本） |
+| `AGH_KEY_FILE` | 本地密钥文件路径（**仅**在 `-WithEnvKey` 应急回落时读取） |
+
+```powershell
+# 例：底座构建在别处时显式指定
+$env:AGH_ENTRY = "D:\my\agh-build\runtime\agnes.mjs"
+$env:AGH_REPO  = "D:\my\agnes-harness"
+```
+
+解析全部落空时，脚本会**列出已尝试的位置并给出两种解决办法**，而不是只说"找不到"。
+解析逻辑集中在 `tools/agh-env.ps1`，各脚本共用同一份判断标准。
+
 ## 2. 获取并构建 Agnes Harness（AGH）
 
 AGH 是比赛指定的执行底座，**不随本仓库分发**，按官方源码构建：

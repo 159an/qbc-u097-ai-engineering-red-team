@@ -9,10 +9,13 @@
 #   pwsh -File tools\open-workbench.ps1
 #   pwsh -File tools\open-workbench.ps1 -Restart      # 强制重启服务
 #   pwsh -File tools\open-workbench.ps1 -Workspace D:\some\project
+#
+# 路径策略：AGH 入口按 tools\agh-env.ps1 的优先级解析，可用 AGH_ENTRY 覆盖。
+#          工作区默认取本仓库根目录，不写死任何人的绝对路径。
 
 param(
     [string]$Profile   = 'local-dev',
-    [string]$Workspace = 'D:\dshworkplace\hackathon-qbc',
+    [string]$Workspace = '',
     [int]$Port         = 4177,
     [int]$TimeoutSec   = 90,
     [switch]$Restart,
@@ -21,10 +24,15 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-$root     = Split-Path -Parent $PSScriptRoot
-$entry    = 'D:\dshworkplace\agh-build\runtime\agnes.mjs'
-$logDir   = Join-Path $root 'evidence\logs'
-$url      = "http://127.0.0.1:$Port/"
+. "$PSScriptRoot\agh-env.ps1"
+$root  = Split-Path -Parent $PSScriptRoot
+$Agh   = Get-AghPaths -RepoRoot $root
+$entry = $Agh.Entry
+
+if (-not $Workspace) { $Workspace = $Agh.RepoRoot }
+
+$logDir = Join-Path $root 'evidence\logs'
+$url    = "http://127.0.0.1:$Port/"
 
 function Show-Error([string]$message) {
     try {
@@ -47,8 +55,9 @@ function Test-Http([string]$u) {
     } catch { return $false }
 }
 
-if (-not (Test-Path -LiteralPath $entry)) {
-    Show-Error "找不到 AGH 构建产物：`n$entry`n`n请先构建（见 README「三、从零复现」），或运行：`ntools\start-agh.ps1"
+if (-not $entry) {
+    $tried = ($Agh.EntryCandidates | Where-Object { $_ }) -join "`n  "
+    Show-Error "找不到 AGH 构建产物 agnes.mjs。`n`n已尝试：`n  $tried`n`n解决办法（二选一）：`n  1) 设置环境变量 AGH_ENTRY 指向 agnes.mjs`n  2) 按 REPRODUCE.md 第 2 节构建 AGH 到上述任一位置"
 }
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -113,4 +122,5 @@ if (-not $ready) {
 
 if (-not $NoBrowser) { Start-Process $url }
 Write-Host "AGH 工作台已就绪：$url"
+
 

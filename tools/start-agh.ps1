@@ -2,15 +2,18 @@
 #
 # 用法：
 #   pwsh -File tools\start-agh.ps1 -Check      # 只体检：打印配置并做一次真实推理探测
-#   pwsh -File tools\start-agh.ps1             # 启动 Web 工作台
+#   pwsh -File tools\start-agh.ps1             # 启动 Web 工作台（前台占用此终端）
 #   pwsh -File tools\start-agh.ps1 -Workspace D:\your\project
 #
+# 路径策略：脚本不写死本机绝对路径。AGH 入口按 tools\agh-env.ps1 的优先级解析，
+#          也可用环境变量 AGH_ENTRY / AGH_REPO / AGH_KEY_FILE 显式指定（见 REPRODUCE.md）。
+#
 # 凭据策略：优先使用 AGH credential store 里已保存的凭据（正常路径，不依赖环境变量）。
-# 仅当传 -WithEnvKey 时，才从本地密钥文件注入环境变量作为回落，用于凭据丢失后的应急。
+#          仅当传 -WithEnvKey 时，才从本地密钥文件注入环境变量作为回落。
 
 param(
     [string]$Profile   = 'local-dev',
-    [string]$Workspace = 'D:\dshworkplace\agh',
+    [string]$Workspace = '',
     [int]$Port         = 4177,
     [switch]$Check,
     [switch]$WithEnvKey
@@ -18,12 +21,20 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-$entry   = 'D:\dshworkplace\agh-build\runtime\agnes.mjs'
-$keyFile = 'D:\dshworkplace\secrets\agnes.key'
+. "$PSScriptRoot\agh-env.ps1"
+$Agh   = Get-AghPaths -RepoRoot (Split-Path -Parent $PSScriptRoot)
+$entry = $Agh.Entry
 
-if (-not (Test-Path -LiteralPath $entry)) {
-    throw "找不到 AGH 构建产物: $entry。请先执行构建：corepack pnpm --filter @agnes/cli build:local --output-dir D:\dshworkplace\agh-build\runtime"
+if (-not $entry) {
+    Write-AghMissing $Agh
+    exit 1
 }
+
+# 工作区默认取本仓库根目录，而不是某个人的绝对路径。
+if (-not $Workspace) { $Workspace = $Agh.RepoRoot }
+
+# 密钥文件位置同样不写死；可用 AGH_KEY_FILE 覆盖。
+$keyFile = if ($env:AGH_KEY_FILE) { $env:AGH_KEY_FILE } else { Join-Path $Agh.RepoRoot 'secrets\agnes.key' }
 
 $env:AGNES_PROFILE = $Profile
 
@@ -52,4 +63,5 @@ if ($Check) {
 Write-Host "启动 AGH Web 工作台：http://127.0.0.1:$Port/"
 Write-Host "（保持此终端开启；关闭终端即停止服务）"
 & node $entry serve --profile $Profile --cwd $Workspace
+
 
