@@ -1,9 +1,20 @@
-﻿# QBC / U097 - D5 one-click start (background mode by default)
+# QBC / U097 - D5 one-click START
 # Usage (repo root):
 #   powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1 -Fault 2
-# Stop: scripts\stop-all.ps1
 # Ports: solver 127.0.0.1:8081 / oracle 127.0.0.1:8082 (localhost only)
+#
+# Design (PID-file + HTTP only; NO Get-CimInstance / Win32_Process - they hang
+# in the AGH shell sandbox):
+#   - Pre-kill: read logs\solver.pid / logs\oracle.pid, Stop-Process -Force,
+#     delete stale pid files. So a new start cannot be shadowed by an old listener.
+#   - Launch each uvicorn via Start-Process ... -PassThru; capture .Id and write
+#     it to logs\<svc>.pid so stop-all can find the exact handle.
+#   - Redirect BOTH stdout and stderr to logs\<svc>.*.log so the long-lived
+#     children never inherit the caller's stdout pipe (avoids the pipe-EOF hang
+#     where a captured start would wait minutes even though services are up).
+#   - Liveness = HTTP /health only (the only reliable "alive" check in this sandbox).
+#   - Script returns immediately after readiness; exit 1 if either /health fails.
 
 [CmdletBinding()]
 param(
@@ -13,6 +24,7 @@ param(
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
+. (Join-Path $repoRoot "scripts\lib-qbc-services.ps1")
 
 # --- pick python that has uvicorn (avoid miniconda) ---
 $PY = $env:QBC_PYTHON
@@ -22,12 +34,14 @@ if (-not $PY) {
     if ($cmd) { $candidates += $cmd.Source }
     $candidates += @(
         "C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe",
-        "C:\Users\26293\AppData\Local\Programs\Python\Python311\python.exe",
-        "D:\Claude Code\miniconda\python.exe"
+        "C:\Users\26293\AppData\Local\Programs\Python\Python311\python.exe"
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) {
-            try { $null = & $c -c "import uvicorn" 2>&1; if ($LASTEXITCODE -eq 0) { $PY = $c; break } } catch { }
+            try {
+                & $c -c "import uvicorn" 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { $PY = $c; break }
+            } catch { }
         }
     }
 }
@@ -44,52 +58,51 @@ switch ($Fault) {
     default { Write-Warning "unknown fault $Fault, use default (all off)" }
 }
 
-# --- stop old listeners ---
-function Stop-Port($port) {
-    $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    if ($c) { foreach ($x in $c) { Stop-Process -Id $x.OwningProcess -Force -ErrorAction SilentlyContinue } }
+# --- clean up any stale service processes via PID files (no CIM) ---
+foreach ($svc in @("solver", "oracle")) {
+    $stale = Read-ServicePid $svc
+    if ($stale -gt 0) {
+        Write-Host "[cleanup] terminating stale $svc pid $stale (from logs\$svc.pid)"
+        Kill-ServicePid $svc | Out-Null
+        Remove-ServicePid $svc
+    }
 }
-Stop-Port 8081
-Stop-Port 8082
-Start-Sleep 1
+# If /health is still answering after killing recorded pids, an old listener
+# (pid file missing/stale) is squatting the port - report and fail rather than
+# start a duplicate that would be shadowed.
+$h = Test-ServiceHealth
+if ($h.Solver -or $h.Oracle) {
+    Write-Warning "stale listener still answering /health after pid-file kill (solver=$($h.Solver) oracle=$($h.Oracle)); cannot guarantee a clean start - stop it manually, then retry"
+    exit 1
+}
 
-# --- log dir ---
-$logDir = Join-Path $repoRoot "logs"
-New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$logDir = Get-LogDir
 
-function Wait-For-Health($url, $timeoutSec) {
-    $deadline = (Get-Date).AddSeconds($timeoutSec)
+function Wait-For-Health([string]$Url, [int]$TimeoutSec) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
-        try {
-            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 1
-            if ($r.StatusCode -eq 200) { return $true }
-        } catch { }
+        if (Test-HttpOk $Url) { return $true }
         Start-Sleep -Milliseconds 300
     }
     return $false
 }
 
-if ($Foreground) {
-    Write-Host "[fg] starting solver+oracle in foreground. Ctrl+C to stop."
-    Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.solver.main:app","--host","127.0.0.1","--port","8081" -WorkingDirectory $repoRoot
-    Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.oracle.main:app","--host","127.0.0.1","--port","8082" -WorkingDirectory $repoRoot
-    $ok1 = Wait-For-Health "http://127.0.0.1:8081/health" 40
-    $ok2 = Wait-For-Health "http://127.0.0.1:8082/health" 40
-    Write-Host "solver ready=$ok1 oracle ready=$ok2"
-    if (-not ($ok1 -and $ok2)) { exit 1 }
-    Write-Host "[fg] both ready. stopping..."
-    Stop-Port 8081
-    Stop-Port 8082
+# Launch both, capture PIDs to files, redirect streams to files.
+$ps1 = Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.solver.main:app","--host","127.0.0.1","--port","8081" -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "solver.log") -RedirectStandardError (Join-Path $logDir "solver.err.log")
+$ps2 = Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.oracle.main:app","--host","127.0.0.1","--port","8082" -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "oracle.log") -RedirectStandardError (Join-Path $logDir "oracle.err.log")
+
+if ($ps1.Id -gt 0) { Write-ServicePid "solver" $ps1.Id }
+if ($ps2.Id -gt 0) { Write-ServicePid "oracle" $ps2.Id }
+Write-Host "[start] solver pid=$($ps1.Id) -> logs\solver.pid ; oracle pid=$($ps2.Id) -> logs\oracle.pid"
+
+$ok1 = Wait-For-Health "http://127.0.0.1:8081/health" 40
+$ok2 = Wait-For-Health "http://127.0.0.1:8082/health" 40
+Write-Host "solver ready=$ok1 oracle ready=$ok2"
+
+if ($ok1 -and $ok2) {
+    Write-Host "[ok] both ready (HTTP /health up, PIDs recorded in logs\). stop with scripts\stop-all.ps1"
 } else {
-    $s1 = Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.solver.main:app","--host","127.0.0.1","--port","8081" -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "solver.log") -RedirectStandardError (Join-Path $logDir "solver.err.log")
-    $s2 = Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.oracle.main:app","--host","127.0.0.1","--port","8082" -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "oracle.log") -RedirectStandardError (Join-Path $logDir "oracle.err.log")
-    $ok1 = Wait-For-Health "http://127.0.0.1:8081/health" 40
-    $ok2 = Wait-For-Health "http://127.0.0.1:8082/health" 40
-    Write-Host "solver pid=$($s1.Id) oracle pid=$($s2.Id)"
-    if ($ok1 -and $ok2) {
-        Write-Host "[ok] both ready. stop: scripts\stop-all.ps1"
-    } else {
-        Write-Warning "not all ready. check logs/"
-        exit 1
-    }
+    Write-Warning "not all ready: solver HTTP=$ok1 oracle HTTP=$ok2 - check logs\<svc>.err.log"
+    # leave the live one running so the operator can inspect; pids are recorded
+    exit 1
 }

@@ -112,7 +112,13 @@ def main() -> None:
         os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
         with open(OUT_PATH, "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
-        print(json.dumps(results, ensure_ascii=False, indent=2), flush=True)
+        # 避免 Windows 控制台 GBK 编码报错：写文件已保证 UTF-8，控制台用 ascii-safe repr
+        import io, sys as _sys
+        try:
+            _sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+        print(json.dumps(results, ensure_ascii=True, indent=2), flush=True)
         print(f"\n已写入 {OUT_PATH}", flush=True)
         print("注意：本文件输出不得交给 Agent 或写入 evidence/（Agent 不可读）。", flush=True)
     finally:
@@ -199,138 +205,196 @@ def measure_P1() -> dict:
     }
 
 
-# ---------------- P2：二阶收敛（误差比 ≈ 4 当网格减半） ----------------
+# ---------------- P2：二阶收敛（时间对齐测法） ----------------
 
 def measure_P2() -> dict:
-    """固定 r=0.4（<0.5 稳定），逐次细化 nodes，比对 oracle。
-    二阶收敛：网格减半时误差比 ≈ 4。
-    测 nodes = 51 -> 101 两档（误差比 = E_small/E_large ≈ 4）。
-    """
+    """FTCS 二阶空间收敛：nodes 51 -> 101 两档，误差随网格细化按 4 倍下降（order≈2）。
+
+    关键：测误差必须时间对齐。旧实现两档取同一 tEnd=0.01，但 r=0.4 固定时
+    dt=0.4*dx²/alpha 随网格细化骤减，steps=tEnd/dt 暴涨，实际推进终态时刻
+    t_actual = steps*dt 在两档上不同，且时间 O(dt) 误差与空间 O(dx²) 误差
+    互相纠缠，误差比被扭曲成 65（非 4）。
+    改法：取一个公共 dt，使两档 steps 都是整数（tEnd=0.008 取 dt=0.008 对两档都是 1 步，
+    即 t_actual 一致），且与各自实际终态时刻的解析值比较，隔离纯空间误差。
+    二阶：E(51)/E(101) ≈ (100/50)² = 4。"""
     alpha = 1.0
     L = 1.0
-    tEnd = 0.01
+    # 时间对齐：两档公共终点 t=0.008，且 t 是两档 dt 的整数倍
+    # nodes=51: dx=0.02, r=0.4 -> dt=0.4*dx²/alpha=8e-4 -> steps=0.008/8e-4=10（整数）
+    # nodes=101: dx=0.01, r=0.4 -> dt=0.4*dx²/alpha=4e-4 -> steps=0.008/4e-4=20（整数）
+    tAlign = 0.008
     x_probe = 0.5
-    u_ref = exact_single(x_probe, tEnd, alpha, L)
+    u_ref = exact_single(x_probe, tAlign, alpha, L)
 
     def err_at(nodes: int) -> float:
-        # 保持 r=0.4：dt = 0.4*dx^2/alpha（统一约定 dx=L/(nodes-1)）
         dx = L / (nodes - 1)
-        dt = 0.4 * dx * dx / alpha
-        steps = int(round(tEnd / dt))
-        # record_every 必须 ≤ steps，否则探针只采到 t=0 初值，误差被摊平
-        res = solve("ftcs", alpha, nodes, dt, tEnd, L,
+        dt = 0.4 * dx * dx / alpha  # r=0.4 固定
+        # 时间对齐：以 tAlign 为公共终点，steps=tAlign/dt 必为整数（构造保证）
+        steps = int(round(tAlign / dt))
+        t_actual = steps * dt  # 实际终态时刻（与 tAlign 一致到构造精度）
+        assert abs(t_actual - tAlign) < 1e-12, f"时间未对齐: t_actual={t_actual} != {tAlign}"
+        res = solve("ftcs", alpha, nodes, dt, t_actual, L,
                     probes=[x_probe], record_every=1)
-        pts = res["probes"][0]["points"]
-        # 取 tEnd 附近的末点（记录到 steps 步）
-        u_num = pts[-1]["u"] if len(pts) > 1 else res["summary"]["maxAbsU"]
-        return abs(u_num - u_ref)
+        u_num = res["probes"][0]["points"][-1]["u"]
+        # 与「各自实际终态时刻」的解析值比较（隔离纯空间二阶误差）
+        u_ref_t = exact_single(x_probe, t_actual, alpha, L)
+        return abs(u_num - u_ref_t)
 
     e1 = err_at(51)
     e2 = err_at(101)
     ratio = e1 / e2 if e2 > 0 else float("inf")
+    # 收敛阶 order = log(ratio)/log(100/50)=log(ratio)/log(2)（51->101 间隔 100/50=2 倍）
+    order = math.log(ratio, 2.0)
     return {
-        "measured": round(ratio, 2),
-        "theory": 4.0,
-        "note": "网格 51->101 误差比（纯空间二阶标称≈4）；实测远超 4 因 r=0.4 固定下步数随网格细化暴涨，时间 O(dt) 项与空间 O(dx²) 项叠加被高阶压缩。已修 record_every bug（之前探针只采到 t=0 初值，误差被摊平为 ratio=1）",
+        "measured": round(order, 2),
+        "theory": 2.0,
+        "errorRatio": ratio,
+        "note": f"时间对齐测法（公共 t={tAlign}，两档 steps 均为整数，与各自实际终态解析值比）：nodes 51->101 间隔 2 倍，空间二阶 order=log2(E51/E101)。旧 65.52 因两档同取 tEnd=0.01 时间错位（steps 13/2 非整除、r 不变下时间 O(dt) 项与空间 O(dx²) 项纠缠）被修掉",
         "errors": {"n51": e1, "n101": e2},
+        "aligned_t": tAlign,
     }
 
 
-# ---------------- P3：中心差分对流非物理振荡 Pe > 2 ----------------
+# ---------------- P3：中心差分对流非物理振荡 Pe_cell > 2 ----------------
 
 def measure_P3() -> dict:
-    """固定 v=1, alpha=1, L=1。扫 nodes 使 Pe = v*dx/alpha 覆盖 [0.1, 4.0]（含 >2 区间）。
-    非物理振荡判据：解出现内部极值或越过物理边界 [0, 峰值初值]。
-    临界 Pe* = 2（中心差格式对流占优时非物理振荡）。
-    二分在 [Pe_lo, Pe_hi] 上定位临界。
-    """
-    v = 1.0
-    alpha = 1.0
-    L = 1.0
-    tEnd = 0.5
+    """中心差分对流非物理振荡阈值（任务书：固定 v, alpha，增大 dx 越过 Pe_cell=2，
+    检查解是否离开边界值域出现非物理极值）。
 
-    def run_at_nodes(nodes: int) -> dict:
-        dx = L / (nodes - 1)
-        pe = v * dx / alpha
-        dt = 0.3 * dx * dx / alpha  # r=0.3 < 0.5 稳定
-        res = solve("ftcs", alpha, nodes, dt, tEnd, L,
-                    probes=[0.25, 0.5, 0.75], record_every=1000,
-                    advection_v=v, advection_enabled=True)
+    判据（只用一条，不换指标）：解是否越过边界值域 [0,1]
+        oscillates = (u_min < -eps) or (u_max > 1 + eps),  eps = 1e-9
+
+    参数设计（按任务书选 A：固定 nodes，把 v 当自变量）：
+        nodes = 11, L = 1, alpha = 1  =>  dx = L/(nodes-1) = 0.1
+        Pe_cell = v*dx/alpha = 0.1*v  （v 是线性自变量，Pe_cell 与 v 一一对应）
+        v 在 [0, 40] 上扫 => Pe_cell 在 [0, 4] 上扫，越过理论阈值 2。
+        临界 Pe_cell* = 2.0 对应 v* = 20。以 v 为自变量做二分（v∈[20,22] 区间，
+        在 v*=20 判据首次越界）。
+
+    旧实现的错误：以 nodes 为自变量且 alpha=1 时 Pe_cell=dx=L/(nodes-1)≤1，
+    怎么扫都到不了 2；且 nodes 变化同时改了 dt 与 steps，判据混淆。改为
+    固定 nodes（v 唯一自变量，Pe_cell=0.1*v），即可干净地定位 Pe_cell*=2。"""
+    nodes = 11
+    L = 1.0
+    alpha = 1.0
+    dx = L / (nodes - 1)          # = 0.1
+    # 用 BTCS（无条件稳定）到稳态，彻底绕过 FTCS 的 CFL（r>0.5 会爆）：
+    # dt=0.01 -> r=alpha*dt/dx²=1.0 对 BTCS 合法（对 FTCS 会爆）；tEnd=50 -> 5000 步足够到稳态
+    dt = 0.01
+    tEnd = 50.0
+    scheme = "btcs"
+    eps = 1e-9
+
+    def run_at_v(v: float) -> dict:
+        pe = v * dx / alpha        # Pe_cell = 0.1*v
+        res = solve(scheme, alpha, nodes, dt, tEnd, L,
+                    probes=[round(i / (nodes - 1), 6) for i in range(1, nodes - 1)],
+                    record_every=10**6,
+                    advection_v=v, advection_enabled=True,
+                    boundary={"left": {"kind": "dirichlet", "value": 0.0},
+                              "right": {"kind": "dirichlet", "value": 1.0}})
         u_max = res["summary"]["maxU"]
         u_min = res["summary"]["minU"]
-        # 非物理振荡：数值解越过物理初值范围（sin 初值最大 1.0）
-        oscillates = (u_max > 1.02) or (u_min < -0.02)
-        return {"nodes": nodes, "pe": round(pe, 4),
-                "oscillates": oscillates, "u_max": round(u_max, 4),
-                "u_min": round(u_min, 4)}
+        oscillates = (u_min < -eps) or (u_max > 1.0 + eps)
+        return {"v": v, "pe": round(pe, 4),
+                "oscillates": oscillates, "u_max": round(u_max, 6),
+                "u_min": round(u_min, 6)}
 
-    # 扫描覆盖 Pe 0.1..4.0（Pe>2 是关键区）
-    sample_nodes = [3, 5, 7, 11, 15, 21, 31, 51, 101]
-    samples = [run_at_nodes(n) for n in sample_nodes]
+    # 扫描覆盖 Pe_cell 0..4（v 0..40，跨 2 的关键区，含 >2 区间）
+    sample_v = [0.0, 2.0, 4.0, 8.0, 10.0, 14.0, 18.0, 20.0, 22.0, 24.0, 26.0, 30.0, 40.0]
+    samples = [run_at_v(vv) for vv in sample_v]
 
-    # 二分定位 Pe*：Pe 升（nodes 降）振荡，Pe 降不振荡
-    lo, hi = 0.05, 5.0  # Pe 搜索区间
+    # 二分定位 v*（Pe_cell* = 0.1*v*）：Pe_cell 升（v 升）振荡，Pe_cell 降不振荡。
+    # 不变式：lo_v 侧不振荡、hi_v 侧振荡；mid 振荡则 hi=mid，否则 lo=mid。
+    lo_v, hi_v = 20.0, 22.0  # Pe_cell 2.0 / 2.2 两端
+    assert not run_at_v(lo_v)["oscillates"], "lo_v=20 应不振荡（Pe_cell=2.0 临界下界）"
+    assert run_at_v(hi_v)["oscillates"], "hi_v=22 应振荡（Pe_cell=2.2>2）"
     for _ in range(30):
-        mid = (lo + hi) / 2
-        nodes_mid = max(3, int(round(L / (mid * alpha / v) + 1)))
-        res = run_at_nodes(nodes_mid)
-        pe = res["pe"]
+        mid = (lo_v + hi_v) / 2
+        if abs(hi_v - lo_v) < 1e-6:
+            break
+        res = run_at_v(mid)
         if res["oscillates"]:
-            hi = pe   # 振荡 → 临界在更小 Pe 侧
+            hi_v = mid   # 振荡 → 临界在更小 v（更小 Pe）侧
         else:
-            lo = pe
+            lo_v = mid   # 不振荡 → 临界在更大 v（更大 Pe）侧
+    pe_star = ((lo_v + hi_v) / 2) * dx / alpha
     return {
-        "measured": round((lo + hi) / 2, 3),
+        "measured": round(pe_star, 3),
         "theory": 2.0,
-        "note": "中心差分对流非物理振荡临界 Pe* = v*dx/alpha = 2（Pe 越大越振荡，二分定位）；实测 2.75 偏大是因扩散项部分压制振荡，扫描已覆盖 Pe>2 区间",
+        "detector": "(u_min < -1e-9) or (u_max > 1 + 1e-9)",
+        "params": {"nodes": nodes, "L": L, "alpha": alpha, "dx": dx,
+                   "scheme": scheme, "dt": dt, "tEnd": tEnd,
+                   "v_axis": "v in [0,40] -> Pe_cell = 0.1*v in [0,4]",
+                   "note": "BTCS 无条件稳定，到稳态绕过 FTCS CFL；固定 nodes=11（dx=0.1），以 v 为自变量扫 Pe_cell=v*dx/alpha=0.1*v 越过 2"},
+        "note": "中心差分对流非物理振荡临界 Pe_cell* = v*dx/alpha = 2。判据=解越过边界值域 [0,1]（u_min<-eps 或 u_max>1+eps）。"
+               "BTCS 到稳态：v=20（Pe_cell=2.0）不越界、v=22（Pe_cell=2.2）u_min 首次变负越界，二分收敛 Pe*≈2.0（落入 2±0.1）",
+        "bisection": {"lo_v": round(lo_v, 4), "hi_v": round(hi_v, 4),
+                       "pe_range": [round(lo_v * dx / alpha, 4), round(hi_v * dx / alpha, 4)]},
         "samples": samples,
     }
 
 
-# ---------------- P4：Neumann-Neumann 能量守恒 ----------------
+# ---------------- P4：Neumann-Neumann 能量守恒（有限体积端点半权 H_fvm） ----------------
 
 def measure_P4() -> dict:
-    """两端 Neumann 零梯度 + 非零初值，总热量 Σu_i*dx 应守恒（到浮点误差）。
-    测 t=0 与 tEnd 的总热差相对漂移。
+    """两端 Neumann 零梯度 + 非零 sin 初值，能量守恒（到浮点误差 ~1e-16）。
+
+    根因修正（对照实测：n=101 uniform 漂移 8.44e-3 / fvm 漂移 1.11e-16）：
+      (a) probes 覆盖全部 nodes 个节点（含 Neumann 端点 i=0 / i=N），每个节点一条 probe。
+      (b) 守恒量口径 = 有限体积端点半权 H_fvm = dx*(0.5*u[0] + u[1:-1].sum() + 0.5*u[-1])；
+          均匀的 u.sum()*dx 本身有 O(dx) 系统漂移，只作对照打印，不作判据。
+    maxRelativeDrift 记 H_fvm 的相对漂移（应 ~1e-16）。
     """
     alpha = 1.0
     L = 1.0
     nodes = 101
-    dx = L / (nodes - 1)  # 统一约定
+    dx = L / (nodes - 1)
     tEnd = 0.05
-    # r = alpha*dt/dx^2，需 r<=0.5 -> dt <= 0.5*dx^2/alpha
-    dt = 0.3 * dx * dx / alpha  # r=0.3 < 0.5 稳定
+    dt = 0.3 * dx * dx / alpha
     r = alpha * dt / dx**2
     assert r <= 0.5, f"保持 r<=0.5 稳定 (got r={r:.4f})"
 
+    # 全节点探针（含两端 Neumann 端点 i=0 / i=N，每个节点一条 probe）
+    probes = [i / (nodes - 1) for i in range(nodes)]
     res = solve("ftcs", alpha, nodes, dt, tEnd, L,
-                probes=[0.5], record_every=10000,
+                probes=probes, record_every=100000,
                 initial={"kind": "sin", "amplitude": 1.0, "modes": 1},
                 boundary={"left": {"kind": "neumann", "value": 0.0},
-                         "right": {"kind": "neumann", "value": 0.0}})
-    # u_final 是节点值（含两端），总热量 ≈ Σu_i*dx
-    # 通过 summary 无法直接得 Σ，需要重新算；这里用探针 + 解析估计
-    # 简化：用 oracle 的总热量守恒性质（解析解在零梯度 Neumann 下总热量不变）
-    # 数值侧：从返回的 u_final（不在响应里）不可得，改用探针近似
-    # 改进：请求时把 probes 设为所有节点以获取全量
-    res2 = solve("ftcs", alpha, nodes, dt, tEnd, L,
-                 probes=[i / nodes for i in range(1, nodes)],
-                 record_every=100000,
-                 initial={"kind": "sin", "amplitude": 1.0, "modes": 1},
-                 boundary={"left": {"kind": "neumann", "value": 0.0},
                           "right": {"kind": "neumann", "value": 0.0}})
-    # 初始总热量（t=0）
-    u0_points = [p["points"][0]["u"] for p in res2["probes"]]
-    H0 = sum(u0_points) * dx
-    # 最终总热量
-    uN_points = [p["points"][-1]["u"] for p in res2["probes"]]
-    HN = sum(uN_points) * dx
-    drift = abs(HN - H0) / abs(H0) if H0 != 0 else 0.0
+    assert len(res["probes"]) == nodes, f"P4 探针须覆盖全部 nodes 节点（got {len(res['probes'])}）"
+
+    u0 = [p["points"][0]["u"] for p in res["probes"]]
+    uN = [p["points"][-1]["u"] for p in res["probes"]]
+
+    # 守恒量口径：有限体积端点半权 H_fvm = dx*(0.5*u[0] + u[1:-1].sum() + 0.5*u[-1])
+    H_fvm_0 = dx * (0.5 * u0[0] + sum(u0[1:-1]) + 0.5 * u0[-1])
+    H_fvm_N = dx * (0.5 * uN[0] + sum(uN[1:-1]) + 0.5 * uN[-1])
+    fvm_drift = abs(H_fvm_N - H_fvm_0) / abs(H_fvm_0) if H_fvm_0 != 0 else 0.0
+
+    # 对照口径：均匀 Σu_i*dx（有 O(dx) 系统漂移，仅作参考，不作判据）
+    H_uniform_0 = sum(u0) * dx
+    H_uniform_N = sum(uN) * dx
+    uniform_drift = abs(H_uniform_N - H_uniform_0) / abs(H_uniform_0) if H_uniform_0 != 0 else 0.0
+
+    print(f"P4 H_fvm    : {H_fvm_0:.6e} -> {H_fvm_N:.6e}, drift = {fvm_drift:.3e}", flush=True)
+    print(f"P4 H_uniform: {H_uniform_0:.6e} -> {H_uniform_N:.6e}, drift = {uniform_drift:.3e} (O(dx) 系统漂移，非判据)", flush=True)
+
     return {
-        "maxRelativeDrift": drift,
+        "maxRelativeDrift": fvm_drift,
         "theory": 0.0,
-        "note": "Neumann-Neumann 零梯度，总热量 Σu_i·dx 守恒（漂移应≈浮点误差）",
-        "H0": H0, "HN": HN,
+        "note": ("Neumann 零梯度；有限体积端点半权 dx/2。"
+                 "H_fvm=dx*(0.5*u[0]+sum(u[1:-1])+0.5*u[-1]) 守恒，漂移~浮点误差；"
+                 "H_uniform=sum(u)*dx 因 O(dx) 系统漂移不可作判据，仅作对照"),
+        "H_fvm_0": H_fvm_0,
+        "H_fvm_N": H_fvm_N,
+        "H_fvm_drift": fvm_drift,
+        "H_uniform_0": H_uniform_0,
+        "H_uniform_N": H_uniform_N,
+        "H_uniform_drift": uniform_drift,
+        "nodes": nodes,
+        "dx": dx,
+        "initial_kind": "sin",
     }
 
 

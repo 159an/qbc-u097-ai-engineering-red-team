@@ -1,0 +1,23 @@
+# 05-d1-convection-fix-verify.txt
+
+复现命令（仓库根目录，PowerShell 5.1）：
+  cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
+  $env:PYTHONIOENCODING="utf-8"
+  python tools/check_advection_implicit.py
+
+真实输出（2026-10-03）：
+exact Pe=1 (continuous): x=0.25 -> 0.165296, x=0.5 -> 0.377541, x=0.75 -> 0.650068
+discrete exact (R=(1+P/2)/(1-P/2), P=0.05): x=0.25 -> 0.165281, x=0.5 -> 0.377516, x=0.75 -> 0.650046
+ftcs  dt=0.000625: u(0.25)=0.165281 u(0.5)=0.377516 u(0.75)=0.650046  peclet=0.0500 blowUp=False steps=4800
+btcs  dt=0.005: u(0.25)=0.165281 u(0.5)=0.377516 u(0.75)=0.650046  peclet=0.0500 blowUp=False steps=600
+cn    dt=0.005: u(0.25)=0.165281 u(0.5)=0.377516 u(0.75)=0.650046  peclet=0.0500 blowUp=False steps=600
+[check] ftcs  max|err| vs discrete-exact = 3.331e-14 -> OK
+[check] btcs  max|err| vs discrete-exact = 7.438e-14 -> OK
+[check] cn    max|err| vs discrete-exact = 3.386e-14 -> OK
+
+结论（D1 对流项修复验收）：
+  FTCS / BTCS / CN 三格式在判据工况（L=1, alpha=1, v=+1, nodes=21, dirichlet 0/1, tEnd=3）
+  下稳态值全部 = 离散精确解 0.165281 / 0.377516 / 0.650046，最大误差 ~1e-14（机器精度内）。
+  - BTCS 修复：端点单位行机制，删除 boundary 双重计入（修复前输出 2x 值）。
+  - CN   修复：RHS 对流项符号改为 (c+c_adv)*u[i-1]+(1-2c)*u[i]+(c-c_adv)*u[i+1]（修复前符号写反退化为纯扩散）。
+  FTCS 本已正确，未改动。

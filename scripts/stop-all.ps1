@@ -1,29 +1,43 @@
-﻿# QBC / U097 — D5 一键停止脚本
-# 用法（仓库根目录）：.\scripts\stop-all.ps1
+# QBC / U097 - D5 one-click STOP (dual-channel liveness + immediate return)
+# Usage (repo root):
+#   powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1
+#
+# Logic: CIM-match & kill all "uvicorn services.(solver|oracle).main:app"
+# processes, then HTTP re-check /health on 8081+8082.
+#   - both down   -> "done", exit 0
+#   - any still up -> "still alive", exit 1
+# No dependency on Get-NetTCPConnection (avoids silent false-success when
+# the TCP table is unreadable).
 
-$ErrorActionPreference = "SilentlyContinue"
 $repoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $repoRoot
+. (Join-Path $repoRoot "scripts\lib-qbc-services.ps1")
 
-Write-Host "[stop] 关闭 8081 (solver) 与 8082 (oracle) 上的 uvicorn ..." -ForegroundColor Cyan
-# 找到监听 8081/8082 的 python 进程并停止
-foreach ($port in @(8081, 8082)) {
-    $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    if ($conn) {
-        foreach ($c in $conn) {
-            Write-Host "  停止 PID $($c.OwningProcess) (port $port)"
-            Stop-Process -Id $c.OwningProcess -Force
-        }
-    } else {
-        Write-Host "  port $port 无监听，跳过"
-    }
+Write-Host "[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ..." -ForegroundColor Cyan
+
+# Channel B: CIM-match and kill every matching process
+$pids = Get-ServicePids
+if ($pids.Count -gt 0) {
+    Write-Host "  CIM matched $($pids.Count) service process(es): $($pids -join ', ')"
+    $k = Stop-ServicePids -Pids $pids
+    Write-Host "  terminated $k process(es)"
+} else {
+    Write-Host "  CIM: no 'uvicorn services.(solver|oracle).main:app' processes found"
 }
 
-# 兜底：杀掉所有 uvicorn services.*.main:app 子进程
-Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match "uvicorn.*services\.(solver|oracle)\.main:app" } |
-    ForEach-Object {
-        Write-Host "  兜底停止 PID $($_.ProcessId)"
-        Stop-Process -Id $_.ProcessId -Force
-    }
+# Channel A: HTTP re-check after a short grace
+Start-Sleep -Milliseconds 400
+$h = Test-ServiceHealth
+if ($h.Solver -or $h.Oracle) {
+    Write-Warning "  still alive after kill (solver=$($h.Solver) oracle=$($h.Oracle)) - retrying"
+    $pids2 = Get-ServicePids
+    if ($pids2.Count -gt 0) { Stop-ServicePids -Pids $pids2 | Out-Null; Start-Sleep -Milliseconds 400 }
+    $h = Test-ServiceHealth
+}
 
-Write-Host "[stop] 完成" -ForegroundColor Green
+if (-not $h.Solver -and -not $h.Oracle) {
+    Write-Host "[stop] done: both /health endpoints down" -ForegroundColor Green
+    exit 0
+}
+Write-Warning "[stop] FAIL: service(s) still alive (solver=$($h.Solver) oracle=$($h.Oracle))"
+exit 1

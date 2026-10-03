@@ -1,0 +1,37 @@
+# 06-d2-exact-terms-truncation.txt
+
+复现命令（仓库根目录，PowerShell 5.1）：
+  cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
+  $env:PYTHONIOENCODING="utf-8"
+  python - <<'PY'
+  import sys; sys.path.insert(0,'.')
+  from services.oracle.main import app
+  from fastapi.testclient import TestClient
+  import json
+  c=TestClient(app)
+  def show(body,label):
+      j=c.post('/exact',json=body).json()
+      print(label,'terms=',j.get('terms'),'trunc_error=',j.get('truncation_error'),
+            'trunc_ok=',j.get('truncation_ok'),'method=',j.get('method',j.get('error')))
+  show({'alpha':1.0,'length':1.0,'initial':{'kind':'sin','amplitude':1.0,'modes':1},
+       'boundary':{'left':{'kind':'dirichlet','value':0.0},'right':{'kind':'dirichlet','value':0.0}},
+       'points':[{'x':0.5,'t':0.001}]},'single-mode')
+  show({'alpha':1.0,'length':1.0,'velocity':1.0,'steady':True,
+       'boundary':{'left':{'kind':'dirichlet','value':0.0},'right':{'kind':'dirichlet','value':1.0}},
+       'points':[{'x':0.5,'t':0.0}]},'steady')
+  show({'alpha':1.0,'length':1.0,'initial':{'kind':'const','amplitude':1.0},
+       'boundary':{'left':{'kind':'dirichlet','value':0.0},'right':{'kind':'dirichlet','value':0.0}},
+       'points':[{'x':0.5,'t':0.1}]},'const-series')
+  PY
+
+真实输出（2026-10-03）：
+single-mode   terms=1 trunc_error=0.0 trunc_ok=True method=zero-dirichlet-single-sine-mode-analytic
+steady        terms=1 trunc_error=0.0 trunc_ok=True method=steady-convection-diffusion-analytic
+const-series  terms=5 trunc_error=1.92407e-11 trunc_ok=True method=separation-of-variables-series
+
+结论（D2 /exact terms 字段 + 截断自验）：
+  /exact 每条成功路径现在返回：
+    terms            = 实际使用的级数项数（闭式解/单模态=1，级数=真实截断项数，不再是恒 0）
+    truncation_error = 几何尾界自验截断误差上界（纯 math，无 numpy；闭式解=0.0）
+    truncation_ok    = truncation_error < 1e-10（任务书自验阈值）
+  const-series 路径 terms=5、truncation_error≈1.9e-11 < 1e-10 -> truncation_ok=True，自验通过。

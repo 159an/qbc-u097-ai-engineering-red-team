@@ -138,6 +138,45 @@ def test_cn_accuracy_vs_oracle():
     assert err < tol, f"CN err={err:.6e} >= tol={tol} (exact={EXACT:.10f}, u={u:.10f})"
 
 
+# ---- 探针末点回归（recordEvery > steps 时仍返回 t=tEnd 探针值）----
+
+def test_probe_last_point_is_tend_when_record_every_exceeds_steps():
+    """回归：三处探针循环在 recordEvery > steps 时只记到 t=0 初值，
+    违反「三格式返回 t=tEnd 探针值」约定。修复后循环后无条件补一个
+    t=steps*dt 末点（去重），即使 recordEvery 默认值也保证 pts[-1].t≈tEnd。
+    这里验证三格式默认 recordEvery=1 时末点 t≈tEnd 且不与循环 append 重复。"""
+    for scheme, cfg in SCHEME_PARAMS.items():
+        dt = cfg["dt"]
+        resp = solve_direct(_payload(scheme, dt))
+        assert isinstance(resp, dict), f"{scheme} returned {type(resp)} instead of dict"
+        pts = resp["probes"][0]["points"]
+        assert len(pts) >= 2, f"{scheme}: expected >= 2 probe points, got {len(pts)}"
+        last = pts[-1]
+        assert math.isclose(last["t"], TEND, rel_tol=1e-9, abs_tol=1e-12), (
+            f"{scheme}: last probe t={last['t']}, expected tEnd={TEND}")
+        assert last["t"] > 0.0, f"{scheme}: last probe t=0 (record loop never fired)"
+        # 去重验证：recordEvery=1 时循环本身已 append 到 step=steps，
+        # 循环后补的末点应与循环内 t=tEnd 项相同（去重后不重复）
+        if resp["numerics"]["steps"] >= 1:
+            assert not (len(pts) >= 3 and math.isclose(pts[-1]["t"], pts[-2]["t"], rel_tol=1e-9) and math.isclose(pts[-1]["u"], pts[-2]["u"], rel_tol=1e-12, abs_tol=1e-15)), (
+                f"{scheme}: duplicate t=tEnd point detected after dedup")
+
+
+def test_probe_last_point_tend_with_record_every_9999():
+    """recordEvery=9999 > steps=400 (ftcs)：探针循环一次都没进，
+    仍须保证 pts[-1].t≈tEnd。旧实现 pts=[{t=0}] 违反「三格式返回 t=tEnd 探针值」约定。"""
+    payload = _payload("ftcs", SCHEME_PARAMS["ftcs"]["dt"])
+    payload["recordEvery"] = 9999
+    resp = solve_direct(payload)
+    assert isinstance(resp, dict)
+    pts = resp["probes"][0]["points"]
+    # 只有 t=0 初值 + 无条件补的 t=tEnd 末点（循环未 append，pts 长度为 2）
+    assert len(pts) == 2, f"expected 2 points (t=0 init + tEnd final), got {len(pts)}"
+    assert math.isclose(pts[0]["t"], 0.0)
+    assert math.isclose(pts[-1]["t"], TEND, rel_tol=1e-9), (
+        f"pts[-1].t={pts[-1]['t']}, expected tEnd={TEND}")
+
+
 # ---- 异常路径：INTERNAL_SOLVER_ERROR 不外泄为 500 裸异常 ----
 
 def test_solver_internal_error_wrapped():

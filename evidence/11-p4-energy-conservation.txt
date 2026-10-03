@@ -1,0 +1,45 @@
+# 11-p4-energy-conservation.txt
+
+D4 P4 收尾：Neumann 零梯度能量守恒判据修正（二阶镜像幽灵点 + 有限体积端点半权）
+
+== 复现命令（仓库根目录）==
+  powershell -ExecutionPolicy Bypass -File scripts\start-all.ps1
+  python tools/measure_ground_truth.py
+  powershell -ExecutionPolicy Bypass -File scripts\stop-all.ps1
+
+== 真根因（本轮修正）==
+1. 原求解器 Neumann 端点行是一阶单侧（每步强制 u_0=u_1, u[-1]=u[-2]），
+   不是 PDE 在端点的二阶离散。每步往总量注入 O(dx) 量级误差：
+   - H_uniform = sum(u)*dx 漂移 1.815e-2（一阶单侧，n=101）
+   - H_fvm     = dx*(0.5u[0]+sum(u[1:-1])+0.5u[-1]) 漂移 8.927e-3（同样不守恒）
+2. 守恒量口径：镜像幽灵点 Neumann 离散的精确守恒量是有限体积端点半权
+   H_fvm = dx*(0.5*u[0] + u[1:-1].sum() + 0.5*u[-1])；
+   均匀 sum(u)*dx 有 O(dx) 系统漂移，不可作判据（只作对照打印）。
+3. probes 覆盖全部 nodes 个节点（含 Neumann 端点 i=0 / i=N）。
+
+== 修复（services/solver/numerics.py，三格式同一约定：二阶镜像幽灵点）==
+- FTCS  端点行改为按 PDE 更新（二阶镜像幽灵点，非一阶单侧赋值）：
+    i=0:  lap[0]  = (2*u[1]  - 2*u[0])  / dx^2
+    i=N-1: lap[-1] = (2*u[N-2] - 2*u[N-1]) / dx^2
+    u_new[0]  = u[0]  + alpha*dt*lap[0]
+    u_new[-1] = u[-1] + alpha*dt*lap[-1]
+- BTCS  端点行 i=0: middle=1+2r, upper=-2r, lower=0, RHS=u_0^k
+                   （g!=0 时 RHS 加 2r*dx*g）；i=N-1 镜像
+- CN    端点行 i=0: middle=1+2c, upper=-2c, lower=0
+                   RHS=(I-cA)_row0 u^k = u[0] + c*(2u[1]-2u[0])（镜像 u[-1]=u[1]）
+                   （g!=0 时加 2c*dx*g）；i=N-1 镜像
+
+== 实测结果（alpha=1, L=1, r=0.4, nodes=101，本次 ground-truth.json 数据）==
+  守恒判据（二阶镜像幽灵点 FTCS，v=0，Neumann-Neumann 零梯度）：
+    H_fvm    : 0.6365674 -> 0.6365674   drift = 0.000e+00   （浮点精度内 ~1e-16）
+    H_uniform: 0.6365674 -> 0.6423436   drift = 9.074e-03   （O(dx) 系统漂移，非判据）
+  对照（一阶单侧旧实现，同参数，n=101）：
+    H_uniform drift = 1.815e-2,  H_fvm drift = 8.927e-3   （两个都漏质量）
+  三格式到稳态 H_fvm 漂移（n=101, v=0）：
+    FTCS = 0.0,  BTCS = 4.7e-12,  CN = 2.8e-12  （均 ~机器精度，telescoping 封闭）
+
+结论：
+  maxRelativeDrift 取 H_fvm（有限体积端点半权 dx/2）的相对漂移，实测 0.0（~1e-16）。
+  note 口径：「Neumann 零梯度；有限体积端点半权 dx/2」。
+  边界精度退化（一阶单侧 -> 二阶镜像幽灵点）已随本次修复一并修掉，
+  全量测试 python tools/run_tests.py => 22 passed（无回归）。

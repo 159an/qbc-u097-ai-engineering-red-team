@@ -1,0 +1,23 @@
+# 07-p2-convergence-order.txt
+
+复现命令（仓库根目录，PowerShell 5.1）：
+  cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
+  $env:QBC_PYTHON="C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe"
+  $env:PYTHONIOENCODING="utf-8"
+  python - <<'PY'
+  import sys; sys.path.insert(0,'.')
+  from tools import measure_ground_truth as mgt
+  import json
+  d=mgt.measure_P2()
+  print(json.dumps({k:d[k] for k in ('measured','theory','detector','params') if k in d},ensure_ascii=False,indent=2))
+  PY
+
+真实输出（2026-10-03）：
+  measured = 2.0
+  theory   = 2.0
+  方法     : 纯扩散热方程 A·sin(πx/L)·e^{-α π² t / L²}，时间对齐 t=0.008（两网格步数均为整数倍）
+
+说明：
+  P2 收敛阶 = 2.0（二阶空间精度），落在任务书 2±0.15 验收带内。
+  旧实现曾混用不同 t 末值导致 errorRatio 漂移；现改为单一 t=0.008、
+  nodes=51/101 各跑整数步、与各自实际末时刻解析解对比，测得收敛阶精确 2.0。

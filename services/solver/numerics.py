@@ -62,11 +62,13 @@ def build_initial(kind: str, amplitude: float, modes: int, nodes: int, length: f
 
     统一约定：nodes = 网格点数，dx = length/(nodes-1)。
     网格 x_i = i*dx, i=0..nodes-1。内部节点 [1..nodes-2] 是未知量，两端由边界条件确定。
-    目前支持 'sin'：A·sin(m·π·x/L)。其他 kind 暂不支持，返回全 0。
+    目前支持 'sin'：A·sin(m·π·x/L)。'const'：常数场。其他 kind 暂不支持，返回全 0。
     """
     if kind == "sin":
         x = np.linspace(0.0, length, nodes)
         return amplitude * np.sin(modes * math.pi * x / length)
+    if kind == "const":
+        return np.full(nodes, float(amplitude))
     return np.zeros(nodes)
 
 
@@ -109,36 +111,49 @@ def _apply_bc_dirichlet(u: np.ndarray, left: BC, right: BC) -> None:
 
 def _laplacian(u: np.ndarray, dx: float, left: BC, right: BC,
                 ghosts: Optional[tuple] = None) -> np.ndarray:
-    """二阶中心差分 Laplacian，对内部节点 [1..n-2]。
-    n = len(u) = 网格点数。Neumann 时用幽灵点值。
+    """二阶中心差分 Laplacian，对全部节点（端点 + 内部）。
+
+    n = len(u) = 网格点数；最后下标 n-1。
+    端点处理统一用二阶镜像幽灵点（u[-1]=u[1], u[N]=u[N-2]）：
+      左端 i=0:  lap[0] = (u[1] - 2u[0] + u[-1])/dx² = (2u[1] - 2u[0] - g_L·dx·2)/dx²
+                  g=0 时 lap[0] = (2u[1] - 2u[0])/dx²（任务书：二阶镜像幽灵点）
+      右端 i=n-1: lap[-1] = (u[n-2] - 2u[n-1] + u[n])/dx²
+                  g=0 时 lap[-1] = (2u[n-2] - 2u[n-1])/dx²
     """
-    n = len(u)  # 网格点数
+    n = len(u)  # 网格点数；下标 0..n-1，内部 1..n-2
     lap = np.zeros_like(u)
     if left.kind == "dirichlet" and right.kind == "dirichlet":
         # 内部：(u[i-1] - 2u[i] + u[i+1]) / dx^2
         lap[1:n-1] = (u[0:n-2] - 2.0 * u[1:n-1] + u[2:n]) / (dx * dx)
-        # 端点：二阶单侧（Dirichlet 已知值直接代入，不参与 Laplacian）
+        # Dirichlet 端点已知值直接代入，不参与 Laplacian 更新
         lap[0] = 0.0
         lap[-1] = 0.0
     elif left.kind == "neumann" and right.kind == "neumann":
         gl = ghosts[0] if ghosts else 0.0
         gr = ghosts[1] if ghosts else 0.0
-        # 左端 i=0：(gl - 2u[0] + u[1]) / dx^2
-        lap[0] = (gl - 2.0 * u[0] + u[1]) / (dx * dx)
+        # 二阶镜像幽灵点（g=0）：u[-1]=u[1], u[N]=u[N-2]
+        # 左端 i=0: (u[1] - 2u[0] + u[-1])/dx², 镜像 u[-1]=u[1]
+        lap[0] = (2.0 * u[1] - 2.0 * u[0]) / (dx * dx)
+        # 右端 i=n-1: (u[n-2] - 2u[n-1] + u[n])/dx², 镜像 u[n]=u[n-2]
+        lap[-1] = (2.0 * u[-2] - 2.0 * u[-1]) / (dx * dx)
+        # 非零梯度 g_L：幽灵点偏移 g_L·dx，lap[0] = (u[1] - 2u[0] + (u[1]-2*g_L*dx))/(dx*dx)
+        if gl != 0.0:
+            lap[0] = (2.0 * u[1] - 2.0 * u[0] - 2.0 * gl * dx) / (dx * dx)
+        if gr != 0.0:
+            lap[-1] = (2.0 * u[-2] - 2.0 * u[-1] + 2.0 * gr * dx) / (dx * dx)
         # 内部
         lap[1:n-1] = (u[0:n-2] - 2.0 * u[1:n-1] + u[2:n]) / (dx * dx)
-        # 右端 i=n-1：(u[n-2] - 2u[n-1] + gr) / dx^2
-        lap[-1] = (u[-2] - 2.0 * u[-1] + gr) / (dx * dx)
     else:
-        # 混合边界，简化处理
+        # 混合边界，简化处理（端点用各自类型，内部不变）
         if left.kind == "neumann":
             gl = ghosts[0] if ghosts else 0.0
-            lap[0] = (gl - 2.0 * u[0] + u[1]) / (dx * dx)
+            # 二阶镜像幽灵点：(2u[1] - 2u[0]) / dx²（g=0）
+            lap[0] = (2.0 * u[1] - 2.0 * u[0] - 2.0 * gl * dx) / (dx * dx)
         else:
             lap[0] = 0.0
         if right.kind == "neumann":
             gr = ghosts[1] if ghosts else 0.0
-            lap[-1] = (u[-2] - 2.0 * u[-1] + gr) / (dx * dx)
+            lap[-1] = (2.0 * u[-2] - 2.0 * u[-1] + 2.0 * gr * dx) / (dx * dx)
         else:
             lap[-1] = 0.0
         lap[1:n-1] = (u[0:n-2] - 2.0 * u[1:n-1] + u[2:n]) / (dx * dx)
@@ -187,9 +202,11 @@ def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
 
     for step in range(1, steps + 1):
         t = step * dt
-        lap = _laplacian(u, dx, left, right)
+        lap = _laplacian(u, dx, left, right, ghosts=(0.0, 0.0))
         u_new = u.copy()
-        # 内部节点 [1, n-2] 更新；端点由边界条件决定
+        # 内部节点 [1, n-2] 更新；Neumann 端点行用二阶镜像幽灵点（任务书 4.1）：
+        #   i=0:  lap[0]  = (2u[1] - 2u[0]) / dx²（g=0，二阶镜像幽灵点）
+        #   i=n-1: lap[-1] = (2u[n-2] - 2u[n-1]) / dx²
         # 对流-扩散：∂u/∂t = alpha*u'' - v*u'（v 向 +x 输送，下游消耗）
         # 中心差：u' ≈ (u[i+1]-u[i-1])/(2dx)，故对流项 = -v*dt*(u[i+1]-u[i-1])/(2dx)
         u_new[1:n-1] = u[1:n-1] + alpha * dt * lap[1:n-1] - advection_v * dt * (u[2:n] - u[0:n-2]) / (2.0 * dx)
@@ -197,10 +214,14 @@ def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
             u_new[0] = left.value
         if right.kind == "dirichlet":
             u_new[-1] = right.value
+        # Neumann 端点行：二阶镜像幽灵点 FTCS（端点按 PDE 更新，而非一阶单侧赋值）
+        #   u_new[0]  = u[0] + alpha*dt*lap[0]   （lap[0]=(2u[1]-2u[0])/dx²，g=0）
+        #   u_new[-1] = u[-1]+ alpha*dt*lap[-1]  （lap[-1]=(2u[n-2]-2u[n-1])/dx²，g=0）
+        # 这套离散的精确守恒量是有限体积端点半权 H_fvm = dx*(0.5u[0]+Σu[1:-1]+0.5u[-1])
         if left.kind == "neumann":
-            u_new[0] = u_new[1] - 2.0 * left.value * dx
+            u_new[0] = u[0] + alpha * dt * lap[0]
         if right.kind == "neumann":
-            u_new[-1] = u_new[-2] + 2.0 * right.value * dx
+            u_new[-1] = u[-1] + alpha * dt * lap[-1]
         u = u_new
         if _is_blowup(u, initial_amp):
             blowup = True
@@ -208,6 +229,16 @@ def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
         if record_every > 0 and step % record_every == 0:
             for i, pos in enumerate(probe_positions):
                 probe_records[i]["points"].append({"t": t, "u": float(u[pos])})
+    # 探针末点修正（回归：record_every > steps 时旧实现只记到 t=0，违反「三格式返回 t=tEnd 探针值」约定）
+    # 循环内已按 record_every 步长 append；循环后无条件补一个 t=steps*dt 的终态探针，
+    # 与循环内已 append 的 t=steps*dt 末点重复时是同一时刻的重复值（幂等，不破坏精度）。
+    # 以 t 字段去重：若最后一个点已等于 t_last，则不再追加（避免 pts[-1] 前多一个 t=tEnd 重复项）
+    if steps > 0:
+        t_last = steps * dt
+        for i, pos in enumerate(probe_positions):
+            pts = probe_records[i]["points"]
+            if not pts or abs(pts[-1]["t"] - t_last) > 1e-12:
+                pts.append({"t": t_last, "u": float(u[pos])})
 
     if FAULTS.shared_state:
         _SHARED_BUF = u.copy()
@@ -231,12 +262,26 @@ def solve_btcs(alpha: float, nodes: int, dt: float, tEnd: float,
     n = len(u)  # = nodes
     blowup = False
 
-    # 三对角系数（BTCS：u^{k+1} - r*(u[i+1] - 2u[i] + u[i-1]) = u^k）
-    lower_base = np.full(n, -r)
+    # BTCS 后向欧拉全隐式（∂u/∂t = alpha·u'' − v·u'）：
+    #   [ I − dt·alpha·L2 + dt·v·L1 ] u^{k+1} = u^k
+    #   L2(u)_i=(u[i-1]-2u[i]+u[i+1])/dx², L1(u)_i=(u[i+1]-u[i-1])/(2dx)
+    # 记 r = alpha·dt/dx², c_adv = v·dt/(2dx) = 0.5·r·Pe_cell（内部行）：
+    #   lower[i]  = −r − c_adv   （u[i-1] 项）
+    #   middle[i] = 1 + 2r
+    #   upper[i]  = −r + c_adv   （u[i+1] 项）
+    c_adv = 0.5 * r * peclet  # = v*dt/(2dx)
+
+    lower_base = np.full(n, -r - c_adv)
     middle_base = np.full(n, 1.0 + 2.0 * r)
-    upper_base = np.full(n, -r)
+    upper_base = np.full(n, -r + c_adv)
     lower_base[0] = 0.0
     upper_base[-1] = 0.0
+
+    # 边界处理只用「端点单位行」一套机制（与内部行系数分离，绝不混用移项）：
+    # Dirichlet：端点行退化为单位行（middle=1, lower=upper=0, rhs=g），u[0]=g、u[-1]=g
+    # 每步精确成立、不随 dt/L 漂移；内部行的 lower[1]·u[0]、upper[n-2]·u[-1]
+    # 由 Thomas 全系统直接求解，端点值经单位行锁定为 g，无需再向 rhs 移项。
+    # Neumann：端点行用单侧二阶差分（lower[0]=−1 / upper[−1]=−1, middle=1），rhs=∓g·dx。
 
     probe_positions = [max(0, min(n - 1, int(round(p * (n - 1))))) for p in probes]
     probe_records = [{"x": probes[i], "points": [{"t": 0.0, "u": float(u[probe_positions[i]])}]} for i in range(len(probes))]
@@ -247,23 +292,37 @@ def solve_btcs(alpha: float, nodes: int, dt: float, tEnd: float,
         middle = middle_base.copy()
         upper = upper_base.copy()
         rhs = u.copy()
-        # 边界处理
+        # 边界行覆盖（端点单位行 / Neumann 行）
         if left.kind == "dirichlet":
             rhs[0] = left.value
-            middle[0] = 1.0 + r
             lower[0] = 0.0
+            middle[0] = 1.0
+            upper[0] = 0.0
         if right.kind == "dirichlet":
             rhs[-1] = right.value
-            middle[-1] = 1.0 + r
+            lower[-1] = 0.0
+            middle[-1] = 1.0
             upper[-1] = 0.0
         if left.kind == "neumann":
-            rhs[0] = -left.value * dx
-            lower[0] = -1.0
-            middle[0] = 1.0
+            # 二阶镜像幽灵点 BTCS 端点行 i=0：
+            #   LHS: (1+2r)u[0]^{k+1} - 2r·u[1]^{k+1}  =>  middle[0]=1+2r, upper[0]=-2r, lower[0]=0
+            #   RHS: u[0]^k  =>  rhs[0]=u[0]^k（g=0）；g≠0 时 rhs 加 2r·dx·g_L（镜像偏移）
+            rhs[0] = u[0]
+            if left.value != 0.0:
+                rhs[0] += 2.0 * r * left.value * dx
+            lower[0] = 0.0
+            middle[0] = 1.0 + 2.0 * r
+            upper[0] = -2.0 * r
         if right.kind == "neumann":
-            rhs[-1] = right.value * dx
-            upper[-1] = -1.0
-            middle[-1] = 1.0
+            # 二阶镜像幽灵点 BTCS 端点行 i=n-1：
+            #   LHS: -2r·u[n-2]^{k+1} + (1+2r)u[n-1]^{k+1}  =>  middle[-1]=1+2r, lower[-1]=-2r, upper[-1]=0
+            #   RHS: u[n-1]^k（g=0）；g≠0 时 rhs 加 2r·dx·g_R
+            rhs[-1] = u[-1]
+            if right.value != 0.0:
+                rhs[-1] += 2.0 * r * right.value * dx
+            lower[-1] = -2.0 * r
+            middle[-1] = 1.0 + 2.0 * r
+            upper[-1] = 0.0
 
         u_new = _thomas(lower, middle, upper, rhs)
         u = u_new
@@ -273,6 +332,15 @@ def solve_btcs(alpha: float, nodes: int, dt: float, tEnd: float,
         if record_every > 0 and step % record_every == 0:
             for i, pos in enumerate(probe_positions):
                 probe_records[i]["points"].append({"t": t, "u": float(u[pos])})
+    # 探针末点修正（回归：record_every > steps 时旧实现只记到 t=0，违反「三格式返回 t=tEnd 探针值」约定）
+    # 循环内已按 record_every 步长 append；循环后无条件补 t=steps*dt 终态探针，
+    # 以 t 字段去重，避免与循环内已 append 的 t=tEnd 末点重复。
+    if steps > 0:
+        t_last = steps * dt
+        for i, pos in enumerate(probe_positions):
+            pts = probe_records[i]["points"]
+            if not pts or abs(pts[-1]["t"] - t_last) > 1e-12:
+                pts.append({"t": t_last, "u": float(u[pos])})
 
     return {"steps": step if steps > 0 else 0, "r": r, "peclet": peclet,
             "blowUp": blowup, "u_final": u, "probe_records": probe_records}
@@ -312,13 +380,20 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
     u = u0.copy()
     n = len(u)  # = nodes
     blowup = False
-    c = r / 2.0
 
-    # CN： -c*u[i-1]^{k+1} + (1+2c)*u[i]^{k+1} - c*u[i+1]^{k+1}
-    #      =  c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k
-    lower_base = np.full(n, -c)
+    # CN：扩散+对流（二阶时间，时间精度 O(dt²)）：
+    #   LHS: (-c-c_adv) u[i-1]^{k+1} + (1+2c) u[i]^{k+1} + (-c+c_adv) u[i+1]^{k+1}
+    #   RHS: (c+c_adv) u[i-1]^k + (1-2c) u[i]^k + (c-c_adv) u[i+1]^k
+    # 推导：CN 取 LHS=(I+dt/2·A_R), A_R = αL2 − vL1；RHS=(I−dt/2·A_L), A_L = αL2 − vL1。
+    # 扩散半权 c = alpha·dt/(2dx²) = r/2；对流半权 c_adv = v·dt/(4dx) = 0.25·r·Pe_cell。
+    # LHS u[i-1] 系数：−c−c_adv；u[i+1] 系数：−c+c_adv（左端系数正确）。
+    # RHS u[i-1] 系数：c+c_adv；u[i+1] 系数：c−c_adv（右端符号与 LHS 相反，注意勿写反）。
+    c = r / 2.0
+    c_adv = 0.25 * r * peclet  # = v*dt/(4dx)
+    # 内部三对角系数（端点行在循环内覆盖；镜像幽灵点下两端对角系数为 ±2c，内部为 ±c）
+    lower_base = np.full(n, -c - c_adv)
     middle_base = np.full(n, 1.0 + 2.0 * c)
-    upper_base = np.full(n, -c)
+    upper_base = np.full(n, -c + c_adv)
     lower_base[0] = 0.0
     upper_base[-1] = 0.0
 
@@ -330,26 +405,44 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
         lower = lower_base.copy()
         middle = middle_base.copy()
         upper = upper_base.copy()
-        # 右端：c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k（内部节点 [1, n-2]）
+        # 右端（显式）：内部行用 (I−cA+cbL1)u^k 的三对角公式
+        #   b=c_adv=v·dt/(4dx)；内部 [1, n-2]；端点由下段边界条件决定
         rhs_new = np.zeros(n)
-        rhs_new[1:n-1] = c * u[0:n-2] + (1.0 - 2.0 * c) * u[1:n-1] + c * u[2:n]
+        rhs_new[1:n-1] = (c + c_adv) * u[0:n-2] + (1.0 - 2.0 * c) * u[1:n-1] + (c - c_adv) * u[2:n]
         # 端点：由边界条件决定
         if left.kind == "dirichlet":
             rhs_new[0] = left.value
-            middle[0] = 1.0 + c
             lower[0] = 0.0
-        else:
-            rhs_new[0] = -left.value * dx
-            lower[0] = -1.0
             middle[0] = 1.0
+            upper[0] = 0.0
+        else:
+            # 二阶镜像幽灵点 CN 端点行 i=0（v=0 时端点行对流贡献恒 0，无需 c_adv）：
+            #   LHS: (1+2c)u[0]^{k+1} - 2c·u[1]^{k+1}  =>  middle[0]=1+2c, upper[0]=-2c, lower[0]=0
+            #   RHS: (I-cA)_row0 · u^k = u[0]^k - c·(u[0]-2u[1]+u[-1])^k，镜像 u[-1]=u[1]
+            #       = u[0]^k + c·(2u[1]^k - 2u[0]^k)
+            #   g≠0 时镜像幽灵点偏移 g_L·dx：rhs 加 2c·dx·g_L
+            rhs_new[0] = u[0] + c * (2.0 * u[1] - 2.0 * u[0])
+            if left.value != 0.0:
+                rhs_new[0] += 2.0 * c * left.value * dx
+            lower[0] = 0.0
+            middle[0] = 1.0 + 2.0 * c
+            upper[0] = -2.0 * c
         if right.kind == "dirichlet":
             rhs_new[-1] = right.value
-            middle[-1] = 1.0 + c
+            lower[-1] = 0.0
+            middle[-1] = 1.0
             upper[-1] = 0.0
         else:
-            rhs_new[-1] = right.value * dx
-            upper[-1] = -1.0
-            middle[-1] = 1.0
+            # 二阶镜像幽灵点 CN 端点行 i=n-1（v=0 时端点行对流贡献恒 0）：
+            #   LHS: -2c·u[n-2]^{k+1} + (1+2c)u[n-1]^{k+1}  =>  middle[-1]=1+2c, lower[-1]=-2c, upper[-1]=0
+            #   RHS: u[-1]^k + c·(2u[-2]^k - 2u[-1]^k)（镜像 u[n]=u[n-2]）
+            #   g≠0 时加 2c·dx·g_R
+            rhs_new[-1] = u[-1] + c * (2.0 * u[-2] - 2.0 * u[-1])
+            if right.value != 0.0:
+                rhs_new[-1] += 2.0 * c * right.value * dx
+            lower[-1] = -2.0 * c
+            middle[-1] = 1.0 + 2.0 * c
+            upper[-1] = 0.0
         u_new = _thomas(lower, middle, upper, rhs_new)
         u = u_new
         if _is_blowup(u, abs(float(np.max(np.abs(u0)))) if u0.size else 1.0):
@@ -358,6 +451,15 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
         if record_every > 0 and step % record_every == 0:
             for i, pos in enumerate(probe_positions):
                 probe_records[i]["points"].append({"t": t, "u": float(u[pos])})
+    # 探针末点修正（回归：record_every > steps 时旧实现只记到 t=0，违反「三格式返回 t=tEnd 探针值」约定）
+    # 循环内已按 record_every 步长 append；循环后无条件补 t=steps*dt 终态探针，
+    # 以 t 字段去重，避免与循环内已 append 的 t=tEnd 末点重复。
+    if steps > 0:
+        t_last = steps * dt
+        for i, pos in enumerate(probe_positions):
+            pts = probe_records[i]["points"]
+            if not pts or abs(pts[-1]["t"] - t_last) > 1e-12:
+                pts.append({"t": t_last, "u": float(u[pos])})
 
     return {"steps": step if steps > 0 else 0, "r": r, "peclet": peclet,
             "blowUp": blowup, "u_final": u, "probe_records": probe_records}

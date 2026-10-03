@@ -1,0 +1,41 @@
+# 10-full-test-suite-22-passed.txt
+
+复现命令（仓库根目录，PowerShell 5.1；run_tests.py 自动拉起 solver+oracle 本地服务再跑 pytest）：
+  cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
+  $env:QBC_PYTHON="C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe"
+  $env:PYTHONIOENCODING="utf-8"
+  python tools/run_tests.py
+
+真实输出（2026-10-03）：
+collecting ... collected 22 items
+
+tests/test_numerics.py::test_ftcs_probe_exists PASSED                    [  4%]
+tests/test_numerics.py::test_btcs_probe_exists PASSED                    [  9%]
+tests/test_numerics.py::test_cn_probe_exists PASSED                      [ 13%]
+tests/test_numerics.py::test_ftcs_accuracy_vs_oracle PASSED              [ 18%]
+tests/test_numerics.py::test_btcs_accuracy_vs_oracle PASSED              [ 22%]
+tests/test_numerics.py::test_cn_accuracy_vs_oracle PASSED                [ 27%]
+tests/test_numerics.py::test_probe_last_point_is_tend_when_record_every_exceeds_steps PASSED [ 31%]
+tests/test_numerics.py::test_probe_last_point_tend_with_record_every_9999 PASSED [ 36%]
+tests/test_numerics.py::test_solver_internal_error_wrapped PASSED        [ 40%]
+tests/test_services.py::test_health_solver PASSED                        [ 45%]
+tests/test_services.py::test_ftcs_r049_converges PASSED                 [ 50%]
+tests/test_services.py::test_ftcs_r051_blowup PASSED                     [ 54%]
+tests/test_services.py::test_alpha_negative_400 PASSED                   [ 59%]
+tests/test_services.py::test_nodes_1_400 PASSED                          [ 63%]
+tests/test_services.py::test_tend_zero_returns_initial PASSED            [ 68%]
+tests/test_services.py::test_probe_out_of_range_400 PASSED               [ 72%]
+tests/test_services.py::test_nodes_2_3_no_crash PASSED                   [ 77%]
+tests/test_services.py::test_oracle_single_mode_hand_computed PASSED     [ 81%]
+tests/test_services.py::test_oracle_steady_convection PASSED             [ 86%]
+tests/test_services.py::test_oracle_no_closed_form_422 PASSED            [ 90%]
+tests/test_services.py::test_oracle_health PASSED                        [ 95%]
+tests/test_services.py::test_concurrent_consistency PASSED               [100%]
+
+============================= 22 passed in 0.93s ==============================
+[runner] pytest exit=0
+
+结论：全量 22 测试通过。其中：
+  - test_{ftcs,btcs,cn}_accuracy_vs_oracle：三格式对流项验收（对 oracle 稳态解析解）。
+  - test_oracle_no_closed_form_422：oracle 无闭式解 422 拒绝数值冒充（含 D2 terms 字段不影响 422）。
+  - 其余：稳定性/CFL、探针末点 t=tEnd、参数校验、并发一致性。

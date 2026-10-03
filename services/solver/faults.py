@@ -13,8 +13,9 @@ class Faults:
     """读取 4 个故障开关。默认值保证"默认是一个正确、诚实的求解器"。"""
 
     def __init__(self) -> None:
-        # 关闭稳定性保护：允许 r > 0.5 静默进入不稳定区（默认开启保护 -> off 时才允许越界）
-        self.cfl_guard_off: bool = _flag("QBC_FAULT_CFL_GUARD")
+        # 关闭稳定性保护：按文档约定 QBC_FAULT_CFL_GUARD=off 才关闭守卫（=on/缺省=守卫开）。
+        # 其余故障开关仍用 _flag（=on 才开）。
+        self.cfl_guard_off: bool = os.environ.get("QBC_FAULT_CFL_GUARD", "on").strip().lower() == "off"
         # 共享状态：求解器复用进程级共享数组（默认按请求隔离）
         self.shared_state: bool = _flag("QBC_FAULT_SHARED_STATE")
         # 静默钳制：负 alpha 不报 400，静默取绝对值

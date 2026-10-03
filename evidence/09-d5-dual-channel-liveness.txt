@@ -1,0 +1,35 @@
+# 09-d5-dual-channel-liveness.txt
+
+复现命令（仓库根目录，PowerShell 5.1，逐条独立执行、不管道避免 90s 挂起）：
+  cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
+  & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\stop-all.ps1     # 起步清场
+  & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-all.ps1    # 启动（立即返回）
+  & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\stop-all.ps1     # 停止
+
+真实输出（2026-10-03）：
+
+[stop 清场（无服务）]
+[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ...
+  CIM: no 'uvicorn services.(solver|oracle).main:app' processes found
+[stop] done: both /health endpoints down          -> exit 0
+
+[start（立即返回）]
+[info] python: C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+solver pid=30884 oracle pid=28460
+[ok] both ready (dual-channel A=HTTP / B=CIM). stop with scripts\stop-all.ps1   -> exit 0
+
+[stop（运行中 -> 杀进程）]
+[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ...
+  CIM matched 2 service process(es): 30884, 28460
+  terminated 2 process(es)
+[stop] done: both /health endpoints down          -> exit 0
+
+结论（D5 双通道存活判定 + 立即返回 + 失败即 exit 1）：
+  start-all / stop-all 共用 scripts\lib-qbc-services.ps1，双通道：
+    通道 A = HTTP /health（127.0.0.1:8081 solver / 127.0.0.1:8082 oracle）证明服务应答；
+    通道 B = Get-CimInstance Win32_Process 匹配 CommandLine 含
+             'uvicorn.*services\.(solver|oracle)\.main:app' 证明进程真的是 uvicorn 服务。
+  判定：
+    - start：HTTP 200 且 CIM 匹配到 >=2 个进程 => [ok] exit 0；否则 Write-Warning + exit 1（不静默假成功）。
+    - stop：CIM 杀进程后 HTTP 复查两端口 /health；两端口皆 down => exit 0；任一仍活 => 重试一次，仍活 => exit 1。
+  脚本纯 ASCII（避开 PS 5.1 对 UTF-8 无 BOM 中文的误读），无 Get-NetTCPConnection 依赖，调用立即返回（不管道/重定向阻塞）。
