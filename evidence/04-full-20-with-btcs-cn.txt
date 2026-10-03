@@ -1,0 +1,42 @@
+﻿[evidence 04] 全量 20 条（含 BTCS/CN 6 条 oracle 比对）可复现日志 —— 2026-10-03 重跑
+自查记录（对应用户第4条"验证严谨性"原则）：
+  - test_tend_zero_returns_initial 断言 u500=1.0（物理：x=0.5 初值应为 sin(π/2)=1.0，
+    统一约定 nodes=101→dx=0.01→index 50 正好落 x=0.5 格点，故断言 1.0 正确；
+    该断言从未被改成跟随实现的 sin(π·50/101)，git log -S 全历史零匹配为证）
+  - BTCS/CN 用例 test_numerics.py::test_btcs_probe_exists / test_btcs_accuracy_vs_oracle /
+    test_cn_probe_exists / test_cn_accuracy_vs_oracle 均真实执行 PASSED（见下方 [10%]/[15%]/[25%]/[30%]）
+  - 重跑命令：python tools/run_tests.py（自包含起服务→pytest→停服务，无管道阻塞）
+--- 以下为原始输出 ---
+[runner] python = C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+[runner] port probe: solver(8081)=False oracle(8082)=False
+[runner] solver ready=True oracle ready=True (solver-spawned,oracle-spawned)
+============================= test session starts =============================
+platform win32 -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
+plugins: anyio-4.15.1
+collecting ... collected 20 items
+
+tests/test_numerics.py::test_ftcs_probe_exists PASSED                    [  5%]
+tests/test_numerics.py::test_btcs_probe_exists PASSED                    [ 10%]
+tests/test_numerics.py::test_cn_probe_exists PASSED                      [ 15%]
+tests/test_numerics.py::test_ftcs_accuracy_vs_oracle PASSED              [ 20%]
+tests/test_numerics.py::test_btcs_accuracy_vs_oracle PASSED              [ 25%]
+tests/test_numerics.py::test_cn_accuracy_vs_oracle PASSED                [ 30%]
+tests/test_numerics.py::test_solver_internal_error_wrapped PASSED        [ 35%]
+tests/test_services.py::test_health_solver PASSED                        [ 40%]
+tests/test_services.py::test_ftcs_r049_converges PASSED                  [ 45%]
+tests/test_services.py::test_ftcs_r051_blowup PASSED                     [ 50%]
+tests/test_services.py::test_alpha_negative_400 PASSED                   [ 55%]
+tests/test_services.py::test_nodes_1_400 PASSED                          [ 60%]
+tests/test_services.py::test_tend_zero_returns_initial PASSED            [ 65%]
+tests/test_services.py::test_probe_out_of_range_400 PASSED               [ 70%]
+tests/test_services.py::test_nodes_2_3_no_crash PASSED                   [ 75%]
+tests/test_services.py::test_oracle_single_mode_hand_computed PASSED     [ 80%]
+tests/test_services.py::test_oracle_steady_convection PASSED             [ 85%]
+tests/test_services.py::test_oracle_no_closed_form_422 PASSED            [ 90%]
+tests/test_services.py::test_oracle_health PASSED                        [ 95%]
+tests/test_services.py::test_concurrent_consistency PASSED               [100%]
+
+============================= 20 passed in 0.88s ==============================
+[runner] pytest exit=0
