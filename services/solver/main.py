@@ -1,8 +1,8 @@
 """求解服务 FastAPI 入口（端口 8081）。
 
-运行：
-    cd services/solver
-    python -m uvicorn main:app --host 127.0.0.1 --port 8081
+运行（仓库根目录）：
+    python -m uvicorn services.solver.main:app --host 127.0.0.1 --port 8081
+说明：services/ 作为命名空间包解析包内相对导入（from . import numerics）。
 """
 from __future__ import annotations
 
@@ -39,9 +39,15 @@ def _err(code: str, message: str, status: int = 400) -> JSONResponse:
                         content={"error": {"code": code, "message": message}})
 
 
-@app.post("/solve")
-async def solve(payload: dict, request: Request) -> Any:
-    # 参数校验（默认严格；QBC_FAULT_SILENT_CLAMP=on 时负 alpha 静默取绝对值）
+def solve_direct(payload: dict) -> Any:
+    """无 HTTP 层的纯函数入口：接收与 /solve 相同结构的 dict，
+    返回 resp dict 或 _err(...) JSONResponse。供测试 / 脚本直连，无需起服务。
+    """
+    return _solve_core(payload)
+
+
+def _solve_core(payload: dict) -> Any:
+    """solve 的核心逻辑，可被 solve（HTTP 层）与 solve_direct（测试）复用。"""
     try:
         alpha = float(payload.get("alpha", 1.0))
         nodes = int(payload.get("nodes", 101))
@@ -56,7 +62,6 @@ async def solve(payload: dict, request: Request) -> Any:
     except (TypeError, ValueError) as e:
         return _err("MALFORMED_REQUEST", f"bad numeric field: {e}")
 
-    # SILENT_CLAMP：负 alpha 静默取绝对值
     if FAULTS.silent_clamp and alpha < 0:
         alpha = abs(alpha)
 
@@ -77,9 +82,11 @@ async def solve(payload: dict, request: Request) -> Any:
 
     solver = numerics.SOLVERS[scheme]
     t0 = time.monotonic()
-
-    result = solver(alpha, nodes, dt, tEnd, length, u0, left, right,
-                    advection_v, probes, record_every)
+    try:
+        result = solver(alpha, nodes, dt, tEnd, length, u0, left, right,
+                        advection_v, probes, record_every)
+    except Exception as e:
+        return _err("INTERNAL_SOLVER_ERROR", f"{type(e).__name__}: {e}", status=500)
 
     elapsed = time.monotonic() - t0
 
@@ -90,7 +97,6 @@ async def solve(payload: dict, request: Request) -> Any:
     r = result["r"]
     peclet = result["peclet"]
 
-    # summary
     finite_mask = u_final[np.isfinite(u_final)]
     if finite_mask.size == 0:
         max_abs = math.inf
@@ -102,36 +108,32 @@ async def solve(payload: dict, request: Request) -> Any:
         max_u = float(np.max(finite_mask))
 
     blowup = result["blowUp"]
-
-    # 超时部分结果故障
     incomplete = False
     if elapsed > SOLVE_TIMEOUT_SEC and FAULTS.partial_on_timeout:
-        # 部分结果：返回已算到的探针记录，不标记 incomplete
         pass
     elif elapsed > SOLVE_TIMEOUT_SEC:
-        # 正常超时：标记 incomplete（当前实现中 elapsed 不应超过，预留）
         incomplete = True
 
     resp: dict[str, Any] = {
         "taskId": f"t-{uuid.uuid4().hex[:8]}",
         "status": "completed",
         "numerics": {
-            "dx": dx,
-            "dt": dt,
-            "r": r,
-            "peclet": peclet,
+            "dx": dx, "dt": dt, "r": r, "peclet": peclet,
             "steps": result["steps"],
         },
         "probes": [
             {"x": rec["x"], "points": rec["points"]} for rec in probe_records
         ],
         "summary": {
-            "maxAbsU": max_abs,
-            "minU": min_u,
-            "maxU": max_u,
-            "blowUp": blowup,
+            "maxAbsU": max_abs, "minU": min_u, "maxU": max_u, "blowUp": blowup,
         },
     }
     if incomplete:
         resp["incomplete"] = True
     return resp
+
+
+@app.post("/solve")
+async def solve(payload: dict, request: Request) -> Any:
+    """POST /solve：HTTP 层薄封装，核心逻辑在 _solve_core。"""
+    return _solve_core(payload)

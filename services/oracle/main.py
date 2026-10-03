@@ -5,9 +5,9 @@
 - 与被测求解服务结构独立（纯 Python math，非 numpy 数值离散）。
 - 无闭式解时返回 422，**绝不返回数值解冒充解析解**。
 
-运行：
-    cd services/oracle
-    python -m uvicorn main:app --host 127.0.0.1 --port 8082
+运行（仓库根目录）：
+    python -m uvicorn services.oracle.main:app --host 127.0.0.1 --port 8082
+说明：services/ 作为命名空间包解析包内相对导入。
 """
 from __future__ import annotations
 
@@ -60,3 +60,5 @@ async def exact_endpoint(payload: dict) -> Any:
         return result
     except NoClosedForm as e:
         return _err("NO_CLOSED_FORM", e.reason, 422)
+    except Exception as e:
+        return _err("INTERNAL_ORACLE_ERROR", f"{type(e).__name__}: {e}", 500)

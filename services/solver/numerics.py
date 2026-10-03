@@ -58,15 +58,21 @@ def validate_params(alpha: float, nodes: int, dt: float, tEnd: float,
 # ----------------------------- 初值 / 边界 -----------------------------
 
 def build_initial(kind: str, amplitude: float, modes: int, nodes: int, length: float) -> np.ndarray:
-    """初始条件。目前支持 'sin'：A·sin(m·π·x/L)。
+    """初始条件。返回 nodes+1 个网格点（含两端 0 和 length）。
 
-    其他 kind 暂未实现，返回全 0 并打印警告——不假装支持。
+    网格 x_i = i*dx, i=0..n, dx=length/n。nodes 是区间数（intervals），
+    网格点共 nodes+1 个。内部节点 [1..n-1] 是未知量，两端由边界条件确定。
+    目前支持 'sin'：A·sin(m·π·x/L)。其他 kind 暂不支持，返回全 0。
     """
     if kind == "sin":
         x = np.linspace(0.0, length, nodes + 1)
         return amplitude * np.sin(modes * math.pi * x / length)
-    # 其他初值暂不支持，返回零初值
     return np.zeros(nodes + 1)
+
+
+def _dx_length(length: float, nodes: int) -> float:
+    """网格步长：nodes 个间隔，nodes+1 个网格点。"""
+    return length / nodes
 
 
 @dataclass
@@ -85,10 +91,6 @@ class BC:
 # ----------------------------- 求解器 -----------------------------
 
 _SHARED_BUF = None  # 模块级：QBC_FAULT_SHARED_STATE=on 时跨请求复用，默认 None（按请求隔离）
-
-
-def _dx_length(length: float, nodes: int) -> float:
-    return length / nodes
 
 
 def _is_blowup(u: np.ndarray, initial_amp: float) -> bool:
@@ -212,48 +214,57 @@ def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
 def solve_btcs(alpha: float, nodes: int, dt: float, tEnd: float,
                length: float, u0: np.ndarray, left: BC, right: BC,
                advection_v: float, probes: list, record_every: int) -> dict:
-    """隐式 BTCS：三对角矩阵 Thomas 求解。无条件稳定，时间一阶。"""
+    """隐式 BTCS：三对角矩阵 Thomas 求解。无条件稳定，时间一阶。
+
+    语义：nodes 是间隔数，网格点共 nodes+1 个（含两端）。三对角矩阵覆盖全部 nodes+1 个点。
+    """
     dx = _dx_length(length, nodes)
     r = alpha * dt / (dx * dx)
     peclet = advection_v * dx / alpha if advection_v != 0 else 0.0
     steps = max(1, int(round(tEnd / dt))) if tEnd > 0 else 0
-    n = nodes
     u = u0.copy()
+    n = len(u)  # nodes+1 个网格点，全部参与三对角求解
     blowup = False
 
-    # 构建三对角系数（BTCS：u^{k+1} - r*(u[i+1] - 2u[i] + u[i-1]) = u^k）
-    lower = np.full(n, -r)
-    middle = np.full(n, 1.0 + 2.0 * r)
-    upper = np.full(n, -r)
-    lower[0] = 0.0
-    upper[-1] = 0.0
+    # 三对角系数（BTCS：u^{k+1} - r*(u[i+1] - 2u[i] + u[i-1]) = u^k）
+    # 覆盖全部 n 个点，端点由边界条件修改系数
+    lower_base = np.full(n, -r)
+    middle_base = np.full(n, 1.0 + 2.0 * r)
+    upper_base = np.full(n, -r)
+    lower_base[0] = 0.0
+    upper_base[-1] = 0.0
 
-    probe_positions = [int(round(p * n)) for p in probes]
+    probe_positions = [max(0, min(n - 1, int(round(p * nodes)))) for p in probes]
     probe_records = [{"x": probes[i], "points": [{"t": 0.0, "u": float(u[probe_positions[i]])}]} for i in range(len(probes))]
 
     for step in range(1, steps + 1):
         t = step * dt
+        # 每步从基线重建系数（避免上一步的边界修正污染）
+        lower = lower_base.copy()
+        middle = middle_base.copy()
+        upper = upper_base.copy()
         rhs = u.copy()
-        # 边界处理：Dirichlet 直接代入
+        # 边界处理
         if left.kind == "dirichlet":
             rhs[0] = left.value
-            # 修正 middle[0] 项
             middle[0] = 1.0 + r
+            lower[0] = 0.0
         if right.kind == "dirichlet":
             rhs[-1] = right.value
             middle[-1] = 1.0 + r
-        # Neumann 简化处理（一阶近似，P2 说明中允许 Agent 发现精度退化）
+            upper[-1] = 0.0
         if left.kind == "neumann":
-            # u[0] - u[1] = g_l*dx (一阶近似)
-            rhs[0] = u[1] + left.value * dx
+            # 一阶：u[1] - u[0] = g_l*dx -> u[0] - u[1] = -g_l*dx
+            rhs[0] = -left.value * dx
             lower[0] = -1.0
             middle[0] = 1.0
         if right.kind == "neumann":
-            rhs[-1] = u[-2] - right.value * dx
+            # 一阶：u[n] - u[n-1] = g_r*dx -> u[n-1] - u[n] = -g_r*dx
+            rhs[-1] = right.value * dx
             upper[-1] = -1.0
             middle[-1] = 1.0
 
-        # Thomas 算法
+        # Thomas 求解（n 个方程对应 n 个网格点）
         u_new = _thomas(lower, middle, upper, rhs)
         u = u_new
         if _is_blowup(u, abs(float(np.max(np.abs(u0)))) if u0.size else 1.0):
@@ -290,41 +301,58 @@ def _thomas(lower: np.ndarray, middle: np.ndarray, upper: np.ndarray,
 def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
              length: float, u0: np.ndarray, left: BC, right: BC,
              advection_v: float, probes: list, record_every: int) -> dict:
-    """Crank-Nicolson：二阶时间精度，无条件稳定。"""
+    """Crank-Nicolson：二阶时间精度，无条件稳定。
+
+    语义：nodes 是间隔数，网格点共 nodes+1 个。三对角矩阵覆盖全部 nodes+1 个点。
+    """
     dx = _dx_length(length, nodes)
     r = alpha * dt / (dx * dx)
     peclet = advection_v * dx / alpha if advection_v != 0 else 0.0
     steps = max(1, int(round(tEnd / dt))) if tEnd > 0 else 0
-    n = nodes
     u = u0.copy()
+    n = len(u)  # nodes+1
     blowup = False
     c = r / 2.0
 
     # CN： -c*u[i-1]^{k+1} + (1+2c)*u[i]^{k+1} - c*u[i+1]^{k+1}
     #      =  c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k
-    lower = np.full(n, -c)
-    middle = np.full(n, 1.0 + 2.0 * c)
-    upper = np.full(n, -c)
-    lower[0] = 0.0
-    upper[-1] = 0.0
+    # 覆盖全部 n 个点
+    lower_base = np.full(n, -c)
+    middle_base = np.full(n, 1.0 + 2.0 * c)
+    upper_base = np.full(n, -c)
+    lower_base[0] = 0.0
+    upper_base[-1] = 0.0
 
-    probe_positions = [int(round(p * n)) for p in probes]
+    probe_positions = [max(0, min(n - 1, int(round(p * nodes)))) for p in probes]
     probe_records = [{"x": probes[i], "points": [{"t": 0.0, "u": float(u[probe_positions[i]])}]} for i in range(len(probes))]
 
     for step in range(1, steps + 1):
         t = step * dt
-        # 右端：c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k
+        lower = lower_base.copy()
+        middle = middle_base.copy()
+        upper = upper_base.copy()
+        # 右端：c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k（内部点）
         rhs_new = np.zeros(n)
         rhs_new[1:n-1] = c * u[0:n-2] + (1.0 - 2.0 * c) * u[1:n-1] + c * u[2:n]
-        rhs_new[0] = (1.0 - 2.0 * c) * u[0] + c * u[1]
-        rhs_new[-1] = c * u[-2] + (1.0 - 2.0 * c) * u[-1]
-        # 边界
+        # 端点：由边界条件决定
         if left.kind == "dirichlet":
             rhs_new[0] = left.value
             middle[0] = 1.0 + c
+            lower[0] = 0.0
+        else:
+            # Neumann 一阶：u[0] - u[1] = -g_l*dx
+            rhs_new[0] = -left.value * dx
+            lower[0] = -1.0
+            middle[0] = 1.0
         if right.kind == "dirichlet":
             rhs_new[-1] = right.value
             middle[-1] = 1.0 + c
+            upper[-1] = 0.0
+        else:
+            # Neumann 一阶：u[n] - u[n-1] = g_r*dx
+            rhs_new[-1] = right.value * dx
+            upper[-1] = -1.0
+            middle[-1] = 1.0
         u_new = _thomas(lower, middle, upper, rhs_new)
         u = u_new
         if _is_blowup(u, abs(float(np.max(np.abs(u0)))) if u0.size else 1.0):
