@@ -1,153 +1,172 @@
 {
-  "P1_ftcs_stability_threshold": {
-    "measured": 0.5,
-    "bisectionTolerance": 0.0005,
+  "generatedAt": "2026-10-03T07:20:49.794Z",
+  "measuredBy": "tools/measure-ground-truth.mjs（独立于智能体运行，不走 AGH）",
+  "services": {
+    "solver": {
+      "ok": true,
+      "scheme": "solver-service",
+      "schemes": [
+        "ftcs",
+        "btcs",
+        "cn"
+      ],
+      "implemented": [
+        "ftcs"
+      ],
+      "version": "1.0.0",
+      "limits": {
+        "maxSteps": 500000,
+        "maxNodes": 2001
+      }
+    },
+    "oracle": {
+      "ok": true,
+      "scheme": "oracle-service",
+      "version": "1.0.0",
+      "modes": [
+        "separation-of-variables (sin + zero Dirichlet)",
+        "steady advection-diffusion (exponential)"
+      ],
+      "independentOf": "the numerical solver — no shared code, no time stepping"
+    }
+  },
+  "acceptance": {
+    "P1": {
+      "measurement": 0.500903,
+      "theory": 0.5,
+      "tolerance": 0.002,
+      "pass": true
+    },
+    "P2": {
+      "measurement": 2.00008,
+      "theory": 2,
+      "tolerance": 0.15,
+      "pass": true
+    },
+    "P3": {
+      "measurement": 2,
+      "theory": 2,
+      "tolerance": 0.1,
+      "pass": true
+    },
+    "P4": {
+      "measurement": 0,
+      "theory": 0,
+      "tolerance": 1e-12,
+      "pass": true
+    }
+  },
+  "P1_ftcsStabilityThreshold": {
+    "rMeasured": 0.500903,
+    "dtMeasured": 0.00005009027088060976,
     "theory": 0.5,
-    "note": "FTCS 临界 r* = alpha*dt/dx^2 = 0.5（稳定上界）"
-  },
-  "P2_convergence_order": {
-    "measured": 2.0,
-    "theory": 2.0,
-    "errorRatio": 4.002259794498875,
-    "note": "时间对齐测法（公共 t=0.008，两档 steps 均为整数，与各自实际终态解析值比）：nodes 51->101 间隔 2 倍，空间二阶 order=log2(E51/E101)。旧 65.52 因两档同取 tEnd=0.01 时间错位（steps 13/2 非整除、r 不变下时间 O(dt) 项与空间 O(dx²) 项纠缠）被修掉",
-    "errors": {
-      "n51": 3.3630455285815763e-05,
-      "n101": 8.402866633505646e-06
-    },
-    "aligned_t": 0.008
-  },
-  "P3_peclet_oscillation_threshold": {
-    "measured": 2.0,
-    "theory": 2.0,
-    "detector": "(u_min < -1e-9) or (u_max > 1 + 1e-9)",
-    "params": {
-      "nodes": 11,
-      "L": 1.0,
-      "alpha": 1.0,
-      "dx": 0.1,
-      "scheme": "btcs",
-      "dt": 0.01,
-      "tEnd": 50.0,
-      "v_axis": "v in [0,40] -> Pe_cell = 0.1*v in [0,4]",
-      "note": "BTCS 无条件稳定，到稳态绕过 FTCS CFL；固定 nodes=11（dx=0.1），以 v 为自变量扫 Pe_cell=v*dx/alpha=0.1*v 越过 2"
-    },
-    "note": "中心差分对流非物理振荡临界 Pe_cell* = v*dx/alpha = 2。判据=解越过边界值域 [0,1]（u_min<-eps 或 u_max>1+eps）。BTCS 到稳态：v=20（Pe_cell=2.0）不越界、v=22（Pe_cell=2.2）u_min 首次变负越界，二分收敛 Pe*≈2.0（落入 2±0.1）",
+    "absoluteDeviationFromTheory": 0.000902709,
     "bisection": {
-      "lo_v": 20.0,
-      "hi_v": 20.0,
-      "pe_range": [
-        2.0,
-        2.0
-      ]
+      "iterations": 30,
+      "dtLow": 0.00005009027079679073,
+      "dtHigh": 0.00005009027088060976,
+      "nodes": 101,
+      "alpha": 1,
+      "dx": 0.01,
+      "tEnd": 0.1,
+      "initialKind": "pulse(center=0.5,width=0.01)"
     },
-    "samples": [
+    "note": "二分给出的是\"在有限观测时间 tEnd 内幅值增长超过 10 倍\"的边界，因此系统性略高于真实临界值：网格模态每步放大 |G|≈4r−1，需 4ε·N ≈ ln10 才被判为发散，ε ≈ ln10/(4·tEnd/dt) ≈ 3e-4。这是有限观测时间的固有偏差，不是实现缺陷；真实临界值由理论给出为 0.5。"
+  },
+  "P2_convergenceOrder": {
+    "orderMeasured": 2.00008,
+    "orderFromFinestPair": 2.00001,
+    "method": "least-squares slope of ln|error| vs ln(dx) over the asymptotic grids; primary value = that slope",
+    "theory": 2,
+    "absoluteDeviationFromTheory": 0.0000847432,
+    "pairwiseOrders": [
+      2.0002,
+      2.00005,
+      2.00001
+    ],
+    "fixedRatio": 0.4,
+    "probe": {
+      "x": 0.5,
+      "t": 0.01
+    },
+    "asymptoticGrids": [
+      101,
+      201,
+      401,
+      801
+    ],
+    "preAsymptoticNote": "nodes=51（dx=0.02）测得阶数约 6.2，属前渐近区：该网格分辨单模态正弦尚不充分，高阶项未衰减，不能计入。这正是\"用均值算阶数\"会得出 3.4 这种无意义结果的原因。",
+    "rows": [
       {
-        "v": 0.0,
-        "pe": 0.0,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
+        "nodes": 101,
+        "dx": 0.01,
+        "dt": 0.00004,
+        "steps": 250,
+        "numeric": 0.906008,
+        "analytic": 0.906018,
+        "absError": 0.0000102983
       },
       {
-        "v": 2.0,
-        "pe": 0.2,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
+        "nodes": 201,
+        "dx": 0.005,
+        "dt": 0.00001,
+        "steps": 1000,
+        "numeric": 0.906015,
+        "analytic": 0.906018,
+        "absError": 0.00000257421
       },
       {
-        "v": 4.0,
-        "pe": 0.4,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
+        "nodes": 401,
+        "dx": 0.0025,
+        "dt": 0.0000025,
+        "steps": 4000,
+        "numeric": 0.906017,
+        "analytic": 0.906018,
+        "absError": 6.43529e-7
       },
       {
-        "v": 8.0,
-        "pe": 0.8,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
-      },
-      {
-        "v": 10.0,
-        "pe": 1.0,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
-      },
-      {
-        "v": 14.0,
-        "pe": 1.4,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
-      },
-      {
-        "v": 18.0,
-        "pe": 1.8,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
-      },
-      {
-        "v": 20.0,
-        "pe": 2.0,
-        "oscillates": false,
-        "u_max": 1.0,
-        "u_min": 0.0
-      },
-      {
-        "v": 22.0,
-        "pe": 2.2,
-        "oscillates": true,
-        "u_max": 1.0,
-        "u_min": -0.047619
-      },
-      {
-        "v": 24.0,
-        "pe": 2.4,
-        "oscillates": true,
-        "u_max": 1.0,
-        "u_min": -0.090909
-      },
-      {
-        "v": 26.0,
-        "pe": 2.6,
-        "oscillates": true,
-        "u_max": 1.0,
-        "u_min": -0.130435
-      },
-      {
-        "v": 30.0,
-        "pe": 3.0,
-        "oscillates": true,
-        "u_max": 1.0,
-        "u_min": -0.2
-      },
-      {
-        "v": 40.0,
-        "pe": 4.0,
-        "oscillates": true,
-        "u_max": 1.0,
-        "u_min": -0.333356
+        "nodes": 801,
+        "dx": 0.00125,
+        "dt": 6.25e-7,
+        "steps": 16000,
+        "numeric": 0.906018,
+        "analytic": 0.906018,
+        "absError": 1.60881e-7
       }
     ]
   },
-  "P4_energy_drift": {
-    "maxRelativeDrift": 0.0,
-    "theory": 0.0,
-    "note": "Neumann 零梯度；有限体积端点半权 dx/2。H_fvm=dx*(0.5*u[0]+sum(u[1:-1])+0.5*u[-1]) 守恒，漂移~浮点误差；H_uniform=sum(u)*dx 因 O(dx) 系统漂移不可作判据，仅作对照",
-    "H_fvm_0": 0.6365674116287159,
-    "H_fvm_N": 0.6365674116287159,
-    "H_fvm_drift": 0.0,
-    "H_uniform_0": 0.6365674116287159,
-    "H_uniform_N": 0.6423436088722445,
-    "H_uniform_drift": 0.009073975729844065,
-    "nodes": 101,
-    "dx": 0.01,
-    "initial_kind": "sin"
+  "P3_pecletOscillationThreshold": {
+    "pecletCellMeasured": 2,
+    "velocityMeasured": 200,
+    "theory": 2,
+    "absoluteDeviationFromTheory": 1.40425e-11,
+    "pecletDomain": 200,
+    "bisection": {
+      "iterations": 37,
+      "velocityLow": 199.99999998685962,
+      "velocityHigh": 200.00000000140426,
+      "nodes": 101,
+      "dx": 0.01,
+      "alpha": 1
+    },
+    "thresholdDefinition": "overshoot（解越过右边界值 1）首次变为正",
+    "note": "被测服务返回的 numerics.peclet 是**网格** Péclet 数 v·dx/α；本项测出的正是它的阈值 2。注意与域 Péclet 数 v·L/α 区分：两者相差 (N−1) 倍。"
   },
-  "measuredAt": "2026-10-03T19:30:00",
-  "serviceVersion": "1.0.0"
+  "P4_energyConservation": {
+    "heatDriftRelativeMeasured": 0,
+    "theory": 0,
+    "tolerance": 1e-12,
+    "totalHeatInitial": 0.01,
+    "totalHeatFinal": 0.01,
+    "steps": 1250,
+    "note": "判据是相对漂移 < 1e-12。该判据有判别力：若边界按朴素幽灵点法（next[0] = u[0] + 2r(u[1]−u[0])）实现，Σ 的变化量为 −r(u₀−u₁+u_{N−1}−u_{N−2})，一般不为零，漂移会远大于 1e-12。"
+  },
+  "oracleNoClosedFormPath": {
+    "neumannRequestStatus": 422,
+    "neumannRequestCode": "E_NO_CLOSED_FORM",
+    "pulseRequestStatus": 422,
+    "pulseRequestCode": "E_NO_CLOSED_FORM",
+    "pass": true,
+    "note": "红线：无闭式解必须 422。谎报基准比没有基准更糟——那会让整个验证失效。"
+  }
 }
