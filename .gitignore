@@ -29,3 +29,13 @@ __pycache__/
 .env
 .env.*
 *.log
+
+# ---- B 角色：服务运行日志（本机产物，不入库） ----
+logs/
+
+# ---- B 角色：地面真值（独立测量基准，禁止入库，Agent 不可读） ----
+ground-truth/
+
+# ---- Python 依赖缓存 ----
+.venv/
+venv/

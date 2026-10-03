@@ -1,0 +1,10 @@
+# QBC / U097 — AI Engineering Red Team — Python 依赖
+# 被测求解服务 + 解析解基准 + 测试
+# 安装：python -m pip install -r requirements.txt
+
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+numpy==2.3.3
+scipy==1.18.1
+pytest==9.1.1
+requests==2.32.5
