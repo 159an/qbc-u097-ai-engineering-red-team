@@ -196,18 +196,29 @@ const healthTool = {
 const solveTool = {
   name: 'solver_solve',
   description:
-    'Run one solve on the target heat-conduction service and return the quantities the service computed: dx, dt, r = alpha*dt/dx^2, peclet = velocity*dx/alpha, steps, blowUp, extrema, and total-heat drift. Set steady=true to solve the steady advection-diffusion profile instead of stepping in time. An HTTP 4xx comes back as data (ok:false with the error code), not as a tool failure.',
+    'Run one solve on the target heat-conduction service and return the quantities the service computed: dx, dt, r = alpha*dt/dx^2, peclet = velocity*dx/alpha, steps, blowUp, extrema, and total-heat drift. Set steady=true to solve the steady advection-diffusion profile instead of stepping in time. An HTTP 4xx comes back as data (ok:false with the error code), not as a tool failure. Deliberately does NOT re-validate the target\'s input domain: illegal or extreme values are passed through so you can observe how the service itself responds.',
+  // ==========================================================================
+  // 参数 schema 刻意**不**复刻目标系统的合法区间
+  // ==========================================================================
+  // 这是本项目的一条设计原则，有实测教训作为依据：
+  // 初版把 alpha 声明为 exclusiveMinimum:0、probes 声明为 [0,1]，结果非法输入在**本地
+  // schema 校验**就被拒绝，根本到不了目标服务——智能体因此完全观察不到服务自己的 400 响应，
+  // 边界探测任务被迫以 blocked 结束（它如实报告了"缺少能构造越界入参的通道"，没有编造）。
+  //
+  // 对验证类作品来说这是原则性错误：**工具的客户端校验决定了智能体能发现什么**。
+  // schema 比目标更严，等于把目标系统的失效模式屏蔽掉，验证就退化成"只测我们允许测的东西"。
+  // 所以这里只保留传输层必要约束（字符串长度），业务域一律交给目标服务裁决。
   parameters: obj(
     {
-      alpha: num({ exclusiveMinimum: 0 }),
-      nodes: int({ minimum: 2, maximum: 2001 }),
-      dt: num({ exclusiveMinimum: 0 }),
-      tEnd: num({ minimum: 0 }),
-      length: num({ exclusiveMinimum: 0 }),
+      alpha: num(),
+      nodes: int({ maximum: 2001 }),
+      dt: num(),
+      tEnd: num(),
+      length: num(),
       steady: bool(),
       initialKind: str({ enum: ['sin', 'pulse', 'constant'] }),
       initialAmplitude: num(),
-      initialModes: int({ minimum: 1 }),
+      initialModes: int(),
       initialCenter: num(),
       initialWidth: num(),
       initialValue: num(),
@@ -216,8 +227,8 @@ const solveTool = {
       rightKind: str({ enum: ['dirichlet', 'neumann'] }),
       rightValue: num(),
       advectionVelocity: num(),
-      probes: arr(num({ minimum: 0, maximum: 1 }), { minItems: 1, maxItems: 16 }),
-      recordEvery: int({ minimum: 1 }),
+      probes: arr(num(), { minItems: 1, maxItems: 16 }),
+      recordEvery: int(),
       solverUrl: str({ maxLength: 2048 }),
     },
     ['nodes'],
@@ -372,7 +383,7 @@ const oracleTool = {
 const burstTool = {
   name: 'qbc_http_burst',
   description:
-    'Send N HTTP requests to the local target with bounded concurrency, then report a deterministic summary: status-code histogram, per-request durations, distinct response-body hashes, and errors. Use it to test for race conditions and capacity limits — the same input yielding different response bodies is a strong signal of state-dependent reads. Only local hosts are permitted.',
+    'Send N HTTP requests to the local target with bounded concurrency, then report a deterministic summary: status-code histogram, per-request durations, distinct response-body hashes, and errors. Use it to test for race conditions and capacity limits — the same input yielding different response bodies is a strong signal of state-dependent reads. It is ALSO the raw escape hatch: with method=POST, contentType=application/json and an arbitrary body you can send any request to the target, including inputs that solver_solve\'s parameters cannot express, and read the service\'s own status code and error body. Only local hosts are permitted.',
   parameters: obj(
     {
       url: str({ minLength: 1, maxLength: 2048 }),

@@ -1,0 +1,32 @@
+﻿[
+    {
+        "id":  "T-N1",
+        "class":  "normal",
+        "title":  "正常：数值解与独立解析解交叉验证",
+        "faults":  "",
+        "exitCode":  0,
+        "wallSeconds":  34.2,
+        "sessionId":  "agnes:local:local-dev:cli:workspace:147747ef76b5d33a",
+        "analyzerExit":  0
+    },
+    {
+        "id":  "T-B1",
+        "class":  "boundary",
+        "title":  "边界：非法与极端输入必须被如实拒绝，且不得崩溃",
+        "faults":  "",
+        "exitCode":  0,
+        "wallSeconds":  72.3,
+        "sessionId":  "agnes:local:local-dev:cli:workspace:4fab9dfe5de6ff6c",
+        "analyzerExit":  0
+    },
+    {
+        "id":  "T-F1",
+        "class":  "failure",
+        "title":  "失败：服务自报字段不诚实时，必须用独立手段识破",
+        "faults":  "hide-blowup",
+        "exitCode":  0,
+        "wallSeconds":  61.4,
+        "sessionId":  "agnes:local:local-dev:cli:workspace:205ca5b9f2346fb5",
+        "analyzerExit":  0
+    }
+]

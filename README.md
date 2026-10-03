@@ -67,14 +67,39 @@ Agent 层    Agnes 模型 + AGH（任务规划 / 工具编排 / 多步执行 / �
 
 ## 当前状态
 
+**运行底座**
+
 - [x] AGH 在 Windows 上完成源码构建并接通 Agnes 模型（已实测推理，2026-10-03）
-- [x] 底座三类一致性测试（正常 / 边界 / 失败）跑通，49/50 断言通过 → `evidence/CONFORMANCE-SUMMARY.md`
-- [x] AGH 后端插件首个工具落地（并发探测），安装与信任流程已摸清
-- [x] 两人分工与接口契约冻结 → `docs/分工与总体计划.md`
-- [ ] 靶场：工程传热求解服务 + 独立解析解基准
-- [ ] 四类攻击（正确性 / 边界 / 压力 / 故障）+ 完整闭环跑通一次
-- [ ] 机器可读 + 人类可读的工程验证报告
-- [ ] 测试样例（正常 / 边界 / 失败三类）、公开内容、演示视频与提交材料
+- [x] 底座三类一致性测试（正常 / 边界 / 失败），49/50 断言通过 → `evidence/CONFORMANCE-SUMMARY.md`
+- [x] 非交互环境下安装 AGH 插件的完整配方（三道门）→ `tools/agh-admin/README.md`
+- [x] 插件工具在非交互模式下免审批执行（实测确认，无需 TTY）
+
+**靶场**
+
+- [x] 工程传热求解服务（FTCS + Dirichlet/Neumann + 对流项 + 稳态模式）
+- [x] 独立解析解基准（闭式解；无闭式解时返回 422，绝不用数值解冒充）
+- [x] 四个数学性质实测通过 4/4 → `ground-truth/ground-truth.json`
+- [x] AGH 插件工具集（target_health / solver_solve / oracle_exact / qbc_http_burst）
+
+**自主发现（作品核心）**
+
+- [x] 智能体自主测定 FTCS 稳定性临界 **r\* ≈ 0.5001356**（理论 0.5），
+      自定判据、二分 15 次、区间宽度 1.5e-11，并自行推导偏差来源
+      → `evidence/discovery/P1-stability-threshold.report.md`
+- [x] 智能体自主完成二阶收敛验证（误差比 4.0000）→ `evidence/target-tests/T-N1.*`
+- [x] 智能体识破服务谎报 `blowUp`（用总热量守恒 + 幅值振荡两个独立判据）
+      → `evidence/target-tests/T-F1.*`
+
+**测试样例（赛事必填第 6 项）**
+
+- [x] 靶场三类测试 20/20 断言通过 → `evidence/target-tests/SUMMARY.md`
+
+**待完成**
+
+- [ ] P3（Pe=2 振荡阈值）与 P4（绝热能量守恒）的自主发现任务
+- [ ] 并发一致性攻击（故障开关 shared-state）
+- [ ] 公开内容（赛事必填第 8 项，需在公开平台发布）
+- [ ] 演示视频（3–5 分钟）与提交材料组装
 
 ## 许可与开源
 
