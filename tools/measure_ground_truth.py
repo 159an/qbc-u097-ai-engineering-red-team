@@ -15,15 +15,108 @@ from __future__ import annotations
 import json
 import math
 import os
+import subprocess
+import sys
 import time
 from typing import Any, Optional
 
 import requests
 
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOLVER = "http://127.0.0.1:8081"
 ORACLE = "http://127.0.0.1:8082"
-OUT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       "ground-truth", "ground-truth.json")
+OUT_PATH = os.path.join(REPO, "ground-truth", "ground-truth.json")
+
+# 选含 uvicorn 的 python（复用 run_tests.py 的探测逻辑）
+def _pick_python() -> str:
+    cands = [os.environ.get("QBC_PYTHON", ""),
+             r"C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe",
+             r"C:\Users\26293\AppData\Local\Programs\Python\Python311\python.exe",
+             "python"]
+    for c in cands:
+        if not c:
+            continue
+        try:
+            r = subprocess.run([c, "-c", "import uvicorn"],
+                               capture_output=True, timeout=15)
+            if r.returncode == 0:
+                return c
+        except Exception:
+            continue
+    return sys.executable
+
+
+def _wait_health(url: str, timeout: float = 40.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with requests.get(url, timeout=1) as resp:
+                if resp.status_code == 200:
+                    return True
+        except Exception:
+            time.sleep(0.3)
+    return False
+
+
+def _start_services():
+    """起两个 uvicorn，返回 (py, [s1, s2])。若已健康则返回 (None, [])。"""
+    if _wait_health(f"{SOLVER}/health", 2) and _wait_health(f"{ORACLE}/health", 2):
+        return None, []
+    py = _pick_python()
+    s1 = subprocess.Popen([py, "-m", "uvicorn", "services.solver.main:app",
+                           "--host", "127.0.0.1", "--port", "8081"],
+                          cwd=REPO, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL,
+                          creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    s2 = subprocess.Popen([py, "-m", "uvicorn", "services.oracle.main:app",
+                           "--host", "127.0.0.1", "--port", "8082"],
+                          cwd=REPO, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL,
+                          creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    ok1 = _wait_health(f"{SOLVER}/health", 40)
+    ok2 = _wait_health(f"{ORACLE}/health", 40)
+    if not (ok1 and ok2):
+        s1.terminate(); s2.terminate()
+        raise RuntimeError("service not ready")
+    return py, [s1, s2]
+
+
+def _stop_services(procs) -> None:
+    for p in procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    time.sleep(1)
+    for p in procs:
+        try:
+            if p.poll() is None:
+                p.kill()
+        except Exception:
+            pass
+
+
+def main() -> None:
+    procs: list = []
+    try:
+        py, procs = _start_services()
+        print("=== D4 独立基准测量（B 角色）===", flush=True)
+        results = {
+            "P1_ftcs_stability_threshold": measure_P1(),
+            "P2_convergence_order": measure_P2(),
+            "P3_peclet_oscillation_threshold": measure_P3(),
+            "P4_energy_drift": measure_P4(),
+            "measuredAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "serviceVersion": "1.0.0",
+        }
+        os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+        with open(OUT_PATH, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+        print(json.dumps(results, ensure_ascii=False, indent=2), flush=True)
+        print(f"\n已写入 {OUT_PATH}", flush=True)
+        print("注意：本文件输出不得交给 Agent 或写入 evidence/（Agent 不可读）。", flush=True)
+    finally:
+        _stop_services(procs)
 
 
 def solve(scheme: str, alpha: float, nodes: int, dt: float, tEnd: float,
@@ -212,9 +305,10 @@ def measure_P4() -> dict:
     nodes = 101
     dx = L / nodes
     tEnd = 0.05
-    dt = 0.0001
+    # r = alpha*dt/dx^2，需 r<=0.5 -> dt <= 0.5*dx^2/alpha
+    dt = 0.3 * dx * dx / alpha  # r=0.3 < 0.5 稳定
     r = alpha * dt / dx**2
-    assert r <= 0.5, "保持 r<=0.5 稳定"
+    assert r <= 0.5, f"保持 r<=0.5 稳定 (got r={r:.4f})"
 
     res = solve("ftcs", alpha, nodes, dt, tEnd, L,
                 probes=[0.5], record_every=10000,
@@ -245,24 +339,6 @@ def measure_P4() -> dict:
         "note": "Neumann-Neumann 零梯度，总热量 Σu_i·dx 守恒（漂移应≈浮点误差）",
         "H0": H0, "HN": HN,
     }
-
-
-def main() -> None:
-    print("=== D4 独立基准测量（B 角色）===")
-    results = {
-        "P1_ftcs_stability_threshold": measure_P1(),
-        "P2_convergence_order": measure_P2(),
-        "P3_peclet_oscillation_threshold": measure_P3(),
-        "P4_energy_drift": measure_P4(),
-        "measuredAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "serviceVersion": "1.0.0",
-    }
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-    print(json.dumps(results, ensure_ascii=False, indent=2))
-    print(f"\n已写入 {OUT_PATH}")
-    print("注意：本文件输出不得交给 Agent 或写入 evidence/（Agent 不可读）。")
 
 
 if __name__ == "__main__":
