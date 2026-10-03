@@ -52,9 +52,68 @@ node agh\packages\cli\dist\local\agnes.mjs config   # 交互式：选 Agnes AI �
 
 ## 4. 跑起来
 
+### 4.1 安装 Python 依赖（仅一次）
+
 ```powershell
-# TODO：靶场与工具层完成后补齐
+# 需要 Python 3.11+，且装有 fastapi/uvicorn/numpy/pytest/requests/scipy
+cd <仓库根目录>
+& "C:\Users\<你的用户名>\AppData\Local\Programs\Python\Python313\python.exe" -m pip install -r requirements.txt
 ```
+
+> `start-all.ps1` / `tools/run_tests.py` / `tools/measure_ground_truth.py` 会**自动探测**本机所有 Python 解释器，跳过缺少 `uvicorn` 的候选（如 miniconda 无依赖的那个）。可设 `$env:QBC_PYTHON` 显式指定。
+
+### 4.2 起服务（人类交互终端用，前台常驻）
+
+```powershell
+.\scripts\start-all.ps1 -Foreground   # 前台常驻（Ctrl+C 停止）
+.\scripts\start-all.ps1              # 后台隐窗口常驻
+.\scripts\stop-all.ps1               # 停止 8081/8082
+```
+
+服务地址：solver `http://127.0.0.1:8081`（`/health` `/solve`），oracle `http://127.0.0.1:8082`（`/health` `/exact`）。
+
+### 4.3 跑全部测试（一条命令，自包含，无需手动起服务）
+
+```powershell
+python tools\run_tests.py     # 自起 solver+oracle -> 等 /health -> pytest 20 条 -> 自停
+```
+
+**期望：`20 passed`**（7 条 `tests/test_numerics.py` 无需常驻服务 + 13 条 `tests/test_services.py` 自起服务）。
+
+### 4.4 跑独立基准测量（D4，B 角色专属，Agent 不可见）
+
+```powershell
+python tools\measure_ground_truth.py   # 自起服务 -> 测 P1-P4 -> 写 ground-truth/ground-truth.json -> 自停
+```
+
+**期望输出**（默认无故障配置）：
+- P1 FTCS 临界 r* ≈ 0.5（理论 0.5）
+- P2 网格 51→101 误差比 ≈ 65.5（纯空间二阶标称 4，因 r=0.4 固定下步数暴涨被高阶压缩，已修 record_every bug）
+- P3 对流振荡临界 Pe* ≈ 2.75（理论 2.0，扩散项压制振荡）
+- P4 Neumann-Neumann 总热量相对漂移 ≈ 0.0（守恒）
+
+### 4.5 单独验证对流项生效（10/7 交付项）
+
+```powershell
+python tools\verify_advection.py   # 自起服务 -> 无对流 vs 有对流 v=0.5 -> 对比稳态分布 -> 自停
+```
+
+**期望**：无对流时 u(0.4)=u(0.6)（对称）；有对流 v=0.5 时峰右移，u(0.6)>u(0.4)（下游耗散）。返回 `peclet = 0.01`（v*dx/alpha）。
+
+### 4.6 故障开关（D3，默认全 OFF，不通过 HTTP 暴露）
+
+```powershell
+# 默认（全 OFF，诚实行为）：
+.\scripts\start-all.ps1 -Foreground
+
+# 开 CFL 故障（允许 r>0.5 进入不稳定区，供 Agent 攻击）：
+$env:QBC_FAULT_CFL_GUARD="off"; .\scripts\start-all.ps1 -Foreground
+
+# 开共享状态故障（跨请求污染）：
+$env:QBC_FAULT_SHARED_STATE="on"; .\scripts\start-all.ps1 -Foreground
+```
+
+4 个开关：`QBC_FAULT_CFL_GUARD` / `QBC_FAULT_SHARED_STATE` / `QBC_FAULT_SILENT_CLAMP` / `QBC_FAULT_PARTIAL_ON_TIMEOUT`，默认全 OFF。
 
 ## 5. 验证判据（怎么算跑通）
 

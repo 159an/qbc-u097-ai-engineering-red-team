@@ -190,7 +190,9 @@ def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
         lap = _laplacian(u, dx, left, right)
         u_new = u.copy()
         # 内部节点 [1, n-2] 更新；端点由边界条件决定
-        u_new[1:n-1] = u[1:n-1] + alpha * dt * lap[1:n-1] + advection_v * dt * (u[2:n] - u[0:n-2]) / (2.0 * dx)
+        # 对流-扩散：∂u/∂t = alpha*u'' - v*u'（v 向 +x 输送，下游消耗）
+        # 中心差：u' ≈ (u[i+1]-u[i-1])/(2dx)，故对流项 = -v*dt*(u[i+1]-u[i-1])/(2dx)
+        u_new[1:n-1] = u[1:n-1] + alpha * dt * lap[1:n-1] - advection_v * dt * (u[2:n] - u[0:n-2]) / (2.0 * dx)
         if left.kind == "dirichlet":
             u_new[0] = left.value
         if right.kind == "dirichlet":
