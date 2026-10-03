@@ -5,9 +5,9 @@
   解析解 u(0.5, 0.01) = exp(-π²·0.01) ≈ 0.9060180558
 
   各格式与解析解偏差（ground-truth/ground-truth.json 记录容差）：
-    FTCS (r=0.25, dt≈2.45e-5, 408步): 误差 ≈ 1.04e-04  → 容差 5e-4
-    BTCS (r=5.1,  dt=5e-4,    20步): 误差 ≈ 2.35e-04  → 容差 5e-4
-    CN   (r=1.23, dt=1.21e-4, 83步): 误差 ≈ 4.73e-04  → 容差 1e-3
+    FTCS (r=0.25, dt≈2.45e-5, 408步): 误差 ≈ 3.2e-05  → 容差 5e-4
+    BTCS (r=5.0,  dt=5e-4,    20步): 误差 ≈ 3.4e-04  → 容差 5e-4
+    CN   (r=1.21, dt=1.21e-4, 83步): 误差 ≈ 3.6e-04  → 容差 1e-3
 
   三种格式在同一算例下都返回 t=tEnd 的探针值（steps > 0, blowUp=False）。
 
@@ -35,13 +35,13 @@ NODES = 101
 TEND = 0.01
 EXACT = math.exp(-math.pi ** 2 * TEND)  # ≈ 0.9060180558
 
-# 各格式 dt 选择（保持 r 在稳定区或无条件下）
+# 各格式 dt 选择（统一约定：nodes=网格点数, dx=L/(nodes-1), 所有数组长=nodes）
 SCHEME_PARAMS = {
-    # FTCS: r = alpha*dt/dx², dx=L/nodes=0.009901, r=0.25 → dt=0.25*dx²/alpha
-    "ftcs": {"dt": 0.25 * (L / NODES) ** 2 / ALPHA, "tol": 5e-4},
-    # BTCS: 无条件稳定，一阶时间精度，dt=5e-4 → r≈5.1
+    # FTCS: r = alpha*dt/dx², dx=L/(nodes-1)=1/100=0.01, r=0.25 → dt=0.25*dx²/alpha
+    "ftcs": {"dt": 0.25 * (L / (NODES - 1)) ** 2 / ALPHA, "tol": 5e-4},
+    # BTCS: 无条件稳定，一阶时间精度，dt=5e-4 → r≈5.0
     "btcs": {"dt": 5e-4, "tol": 5e-4},
-    # CN:   无条件稳定，二阶时间精度，dt=1.21e-4 → r≈1.23, 83步
+    # CN:   无条件稳定，二阶时间精度，dt=1.21e-4 → r≈1.21, 83步
     "cn":   {"dt": 1.21e-4, "tol": 1e-3},
 }
 
@@ -50,7 +50,7 @@ def _payload(scheme: str, dt: float) -> dict:
     return {
         "scheme": scheme,
         "alpha": ALPHA,
-        "nodes": NODES,  # 网格点数（含两端）
+        "nodes": NODES,  # 网格点数（含两端，统一约定 dx=L/(nodes-1)）
         "dt": dt,
         "tEnd": TEND,
         "length": L,
