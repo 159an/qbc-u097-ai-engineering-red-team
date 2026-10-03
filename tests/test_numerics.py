@@ -4,10 +4,10 @@
   alpha=1, L=1, nodes=101, tEnd=0.01, 初值 A·sin(πx/L), A=1, 两端 Dirichlet=0
   解析解 u(0.5, 0.01) = exp(-π²·0.01) ≈ 0.9060180558
 
-  各格式与解析解偏差（ground-truth/ground-truth.json 记录容差）：
-    FTCS (r=0.25, dt≈2.45e-5, 408步): 误差 ≈ 3.2e-05  → 容差 5e-4
-    BTCS (r=5.0,  dt=5e-4,    20步): 误差 ≈ 3.4e-04  → 容差 5e-4
-    CN   (r=1.21, dt=1.21e-4, 83步): 误差 ≈ 3.6e-04  → 容差 1e-3
+  各格式与解析解偏差（ground-truth/ground-truth.json 记录容差，统一约定 nodes=101 dx=0.01）：
+    FTCS (r=0.25, dt=2.5e-5,  400步): 误差 ≈ 3.7e-06   → 容差 5e-4
+    BTCS (r=5.0,  dt=5e-4,     20步): 误差 ≈ 3.4e-04   → 容差 5e-4
+    CN   (r=5.0,  dt=5e-4,     20步): 误差 ≈ 4.3e-05   → 容差 1e-4
 
   三种格式在同一算例下都返回 t=tEnd 的探针值（steps > 0, blowUp=False）。
 
@@ -35,14 +35,14 @@ NODES = 101
 TEND = 0.01
 EXACT = math.exp(-math.pi ** 2 * TEND)  # ≈ 0.9060180558
 
-# 各格式 dt 选择（统一约定：nodes=网格点数, dx=L/(nodes-1), 所有数组长=nodes）
+# 各格式 dt 选择（统一约定：nodes=网格点数, dx=L/(nodes-1)=0.01, 所有数组长=nodes）
 SCHEME_PARAMS = {
-    # FTCS: r = alpha*dt/dx², dx=L/(nodes-1)=1/100=0.01, r=0.25 → dt=0.25*dx²/alpha
-    "ftcs": {"dt": 0.25 * (L / (NODES - 1)) ** 2 / ALPHA, "tol": 5e-4},
-    # BTCS: 无条件稳定，一阶时间精度，dt=5e-4 → r≈5.0
+    # FTCS: r = alpha*dt/dx² = 0.25 → dt = 0.25*0.01² = 2.5e-5, 400步
+    "ftcs": {"dt": 2.5e-5, "tol": 5e-4},
+    # BTCS: 无条件稳定，一阶时间精度 O(dt)，dt=5e-4 → r=5.0, 20步
     "btcs": {"dt": 5e-4, "tol": 5e-4},
-    # CN:   无条件稳定，二阶时间精度，dt=1.21e-4 → r≈1.21, 83步
-    "cn":   {"dt": 1.21e-4, "tol": 1e-3},
+    # CN:   无条件稳定，二阶时间精度 O(dt²)，dt=5e-4 → r=5.0, 20步（与 BTCS 同参数便于对比）
+    "cn":   {"dt": 5e-4, "tol": 1e-4},
 }
 
 
