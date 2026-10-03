@@ -75,3 +75,5 @@ Desktop.ini
 # （构建/配置/探测/一致性测试的证据日志仍会提交）
 evidence/logs/solver.*.log
 evidence/logs/oracle.*.log
+# 原始轨迹的其它命名变体（统一按 trajectory 尾巴排除）
+*trajectory.json
