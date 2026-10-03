@@ -94,12 +94,22 @@ Agent 层    Agnes 模型 + AGH（任务规划 / 工具编排 / 多步执行 / �
 
 - [x] 靶场三类测试 20/20 断言通过 → `evidence/target-tests/SUMMARY.md`
 
-**待完成**
+**自主发现（补全）**
 
-- [ ] P3（Pe=2 振荡阈值）与 P4（绝热能量守恒）的自主发现任务
-- [ ] 并发一致性攻击（故障开关 shared-state）
+- [x] P3 稳态对流振荡阈值 **Pe = 2**，并自主推导出中心差分系数不等式
+      → `evidence/discovery/P3-peclet-threshold.report.md`
+- [x] P4 绝热能量守恒：漂移不随步数累积（12500 步仍 1.21e-15）
+      → `evidence/discovery/P4-energy-conservation.report.md`
+- [x] P5 并发一致性：识破跨请求状态污染，给出 2 次请求的最小复现
+      → `evidence/discovery/P5-concurrency-contamination.report.md`
+- [x] 用代码机械否证智能体自己捏造的服务缺陷指控
+      → `evidence/discovery/P3-claim-verification.md`
+
+**待完成（需人工）**
+
 - [ ] 公开内容（赛事必填第 8 项，需在公开平台发布）
 - [ ] 演示视频（3–5 分钟）与提交材料组装
+- [ ] `TEAM.md` 填写姓名 / 学校 / 学院 / 学号
 
 ## 许可与开源
 

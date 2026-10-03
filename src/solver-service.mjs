@@ -50,14 +50,22 @@ function env(name) {
 // 共享状态故障：模块级缓冲 + 异步切片推进。
 // Node 是单线程，同步循环无法被其他请求插入；所以真实世界里的这类 bug 总是伴随
 // 异步让出（写进度、刷日志、流式返回）。这里如实模拟这一点。
+//
+// 故障形态刻意选成"**忘记按请求重置**"这种最常见的写法：缓冲只在首次分配时写入初值。
+// 后果是第二次及以后的请求会以**上一个请求的终态**作为自己的初态——
+// 对同一个请求重复执行会得到不同结果，而这在纯函数语义下是不可能的。
+// （初版实现是"每步都重新写入同一初值"，对参数相同的并发请求其实无害、测不出来，
+//   属于故障注入本身没做到位；已按上面这种可检测的形态重写。）
 // ---------------------------------------------------------------------------
 let sharedCurrent = null
 let sharedNext = null
+let sharedInitialized = false
 
 function ensureShared(nodes) {
   if (!sharedCurrent || sharedCurrent.length !== nodes) {
     sharedCurrent = new Float64Array(nodes)
     sharedNext = new Float64Array(nodes)
+    sharedInitialized = false
   }
 }
 
@@ -339,7 +347,11 @@ async function solve(spec) {
     ensureShared(nodes)
     u = sharedCurrent
     next = sharedNext
-    applyInitial(u, spec) // 并发时会被其他请求的初值覆盖 —— 这正是要暴露的缺陷
+    // 故障：只在首次分配时写入初值，之后不再按请求重置 —— 见文件顶部说明。
+    if (!sharedInitialized) {
+      applyInitial(u, spec)
+      sharedInitialized = true
+    }
   } else {
     u = new Float64Array(nodes)
     next = new Float64Array(nodes)

@@ -1,0 +1,349 @@
+{
+  "generatedAt": "2026-10-03T09:08:52.170Z",
+  "source": "P5-concurrency-contamination.trajectory.raw.json",
+  "profile": "normal",
+  "eventCount": 122,
+  "parseErrors": [],
+  "typeHistogram": {
+    "session/start": 1,
+    "x/agnes/code-mode/kernel": 1,
+    "inbox": 2,
+    "user/message": 2,
+    "turn/start": 1,
+    "x/host/session-title": 2,
+    "budget.state": 5,
+    "x/core/op-mark": 5,
+    "x/core/context-breakdown": 5,
+    "step/start": 5,
+    "request/header": 5,
+    "effect/intent": 13,
+    "request/sent": 5,
+    "assistant/output": 12,
+    "assistant/message": 5,
+    "tool/call": 8,
+    "cost/ledger": 5,
+    "effect/settled": 13,
+    "tool/result": 8,
+    "verifier/signal": 13,
+    "step/end": 5,
+    "turn/end": 1
+  },
+  "prompt": "你是工程验证智能体。任务：核验被测求解服务的**可重复性**。\n\n前提（请自己验证）：若服务实现正确，同一个请求无论调用多少次、是否并发，都应返回完全相同的数值。\n\n工具：\n- solver_solve：单次求解\n- solver_burst：对求解端点并发发送**同一个**求解请求，返回逐请求的 maxAbsU 值、distinctResponseBodies 与 consistent 判定；它对纯函数语义做了直接判定\n\n要求：\n1. 用 solver_solve 对同一组参数串行重复调用 3 次，记录每次的 summary.maxAbsU。\n2. 用 solver_burst 对同一组参数并发发送 6 次请求（concurrency=3），报告 statusCounts、distinctResponseBodies、distinctMaxAbsUValues、consistent 与逐请求的 maxAbsU 值。\n3. 回答：该服务是否满足同请求同结果？给出判据与数值证据。\n4. 若发现不满足，说明这是哪一类缺陷（提示：不是数值精度问题），以及对使用者的实际影响。\n5. 设计并执行一次**最小复现**：用最少请求稳定复现，给出可照抄的步骤。\n\n全程中文，数字取自工具返回，不要心算。",
+  "finalAnswer": "**Verification complete.** All numbers below are taken directly from tool returns.\n\n## 1. 串行 3 次同参数调用（solver_solve ×3）\n\n固定参数：`nodes=41, length=2, alpha=0.01, dt=0.0005, tEnd=0.5, 边界两侧 Dirichlet=0, 初始 sin 单模`\n\n| 次序 | taskId | summary.maxAbsU |\n|---|---|---|\n| 第 1 次 | t-2-mus64vfh | 0.966063149209155 |\n| 第 2 次 | t-1-mus64vfe | 0.9708398293547366 |\n| 第 3 次 | t-3-mus64vfj | 0.9636836296250979 |\n\n三次结果**互不相同**（差值在 1e-2~1e-3 量级，远超浮点噪声）。\n\n## 2. 并发 6 次（solver_burst，concurrency=3）\n\n- **statusCounts**: `{\"200\": 6}`（全部成功，非服务端错误）\n- **distinctResponseBodies**: 6（6 个响应体全不同）\n- **distinctMaxAbsUValues**: 6\n- **consistent**: `false`\n- **逐请求 maxAbsU**: 0.9355824505371837, 0.9309792420769322, 0.9286861380074045, 0.9083007066268053, 0.8993847384491936, 0.8949596282574915\n- 工具给出的 verdict：*\"INCONSISTENT — identical requests did NOT return identical results; this is cross-request state contamination, not floating-point noise\"*\n\n## 3. 判定：不满足同请求同结果\n\n判据：\n- 纯函数语义要求：同输入 → 同输出。此处 3 次串行即得 3 个不同值；并发 6 次得 6 个不同值、6 个不同响应体。\n- 数值证据：串行 maxAbsU 三个互异（0.9661 / 0.9708 / 0.9637）；并发时 6 个 bodyHash 全不同，且逐请求的 `totalHeatInitial` 依次递减（1.2264 → 1.1587）。\n\n关键旁证（排除\"精度问题\"）：`totalHeatInitial` 是**请求声明的初始条件**（sin 单模、幅度 1）算出的应有初值，理论上是确定的；但实测它随调用次数变化（1.266 → 1.273 → 1.257 → 1.139……），说明服务端并非每次从请求参数重建初始场，而是**沿用了上一次（或并发改写中的）内部场状态**。\n\n## 4. 缺陷类别与实际影响\n\n- **类别**：这不是数值精度/收敛性问题，而是**跨请求状态污染（服务端共享可写状态）**——服务端持有全局/单例的求解器状态，`/solve` 没有先按请求参数重置初始条件，而是从残留场继续演化（或并发请求同时读写同一场）。违反 HTTP 无状态性。\n- **对使用者的实际影响**：\n  - 结果不可复现：同一参数在不同时刻/并发下得到不同答案，任何\"验证性\"调用（重跑核对）都会\"失败\"；\n  - 缓存/重试语义被破坏：网关重试、结果缓存都会混入\"上次请求的解\"；\n  - 并发场景下答案随并发时序漂移（本次 6 个值单调递减即此现象），下游基于\"同一请求同一结果\"的假设（如比对测试、回归基线、多实例负载均衡后取\"任意一节点\"结果）全部失效；\n  - 甚至掩盖真实 bug：用户以为数值在\"噪声范围内波动\"，而实际是系统性错误。\n\n## 5. 最小复现（2 次请求即可稳定复现）\n\n可照抄步骤：\n1. 用 `solver_solve` 发送参数 A：`nodes=41, length=2, alpha=0.01, dt=0.0005, tEnd=0.5, leftKind=dirichlet/leftValue=0, rightKind=dirichlet/rightValue=0, initialKind=sin, initialModes=1, probes=[0.25,0.5,0.75]`，记录第一次返回的 `summary.maxAbsU`。\n2. 用 `solver_solve` 发送**完全相同**的参数 A，记录第二次返回的 `summary.maxAbsU`。\n3. 对比两次值：若不同（本会话实测 0.966063149209155 vs 0.9708398293547366 vs 0.9636836296250979 全程互异，且继续调用仍不收敛回同一值——第 4 次已得 0.8839918720435496），即复现缺陷。\n\n（等价地，用 `solver_burst` 以 requests=2 并发发 2 个同参请求，`distinctResponseBodies=2` 即复现。）",
+  "model": {
+    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "id": "agnes-3.0-flash"
+  },
+  "modelsUsed": [
+    "agnes-3.0-flash"
+  ],
+  "toolCounts": {
+    "solver_solve": 7,
+    "solver_burst": 1
+  },
+  "toolCallCount": 8,
+  "toolChain": [
+    {
+      "index": 1,
+      "seq": 24,
+      "name": "solver_solve",
+      "toolUseId": "t1-49dfbc2eaafefafa156c0c233d9477e4",
+      "startedAt": "2026-10-03T09:07:00.758Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 132,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 2,
+      "seq": 25,
+      "name": "solver_solve",
+      "toolUseId": "t2-a2817407c8b3f5afafbf753a07bb0338",
+      "startedAt": "2026-10-03T09:07:00.766Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 132,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 3,
+      "seq": 26,
+      "name": "solver_solve",
+      "toolUseId": "t0-41a1b7eca4291db53343f81080ea2cd8",
+      "startedAt": "2026-10-03T09:07:00.772Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 132,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 4,
+      "seq": 53,
+      "name": "solver_solve",
+      "toolUseId": "t5-7f30c721f4b2c5430c6c0acf732c31e4",
+      "startedAt": "2026-10-03T09:07:18.151Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 7874,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 5,
+      "seq": 54,
+      "name": "solver_solve",
+      "toolUseId": "t4-a4402566f5ff222878f6e5431a771169",
+      "startedAt": "2026-10-03T09:07:18.156Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 7894,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 6,
+      "seq": 55,
+      "name": "solver_solve",
+      "toolUseId": "t3-2a9ed6653e96b164e1238f34c5315805",
+      "startedAt": "2026-10-03T09:07:18.161Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 7901,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 7,
+      "seq": 79,
+      "name": "solver_burst",
+      "toolUseId": "t6-aa207dea57d734ab3f2b3d0238703443",
+      "startedAt": "2026-10-03T09:07:27.611Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 2245,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    },
+    {
+      "index": 8,
+      "seq": 99,
+      "name": "solver_solve",
+      "toolUseId": "t7-731e07c08bf48afedada3d2ae141e5d1",
+      "startedAt": "2026-10-03T09:07:42.593Z",
+      "resultSeen": true,
+      "isError": false,
+      "resultBytes": 7901,
+      "denied": false,
+      "verdicts": [
+        "pass"
+      ],
+      "allPassed": true
+    }
+  ],
+  "errorResults": [],
+  "approvalEvents": [],
+  "maxStepInTurn": 5,
+  "stepEnds": [
+    {
+      "seq": 37,
+      "turn": 1,
+      "step": 1
+    },
+    {
+      "seq": 66,
+      "turn": 1,
+      "step": 2
+    },
+    {
+      "seq": 84,
+      "turn": 1,
+      "step": 3
+    },
+    {
+      "seq": 104,
+      "turn": 1,
+      "step": 4
+    },
+    {
+      "seq": 119,
+      "turn": 1,
+      "step": 5
+    }
+  ],
+  "turnEndReason": "completed",
+  "verifier": {
+    "toolLevelCount": 8,
+    "toolLevelAllPassed": true,
+    "turnLevelVerdicts": [
+      "pass"
+    ]
+  },
+  "ledger": [
+    {
+      "seq": 22,
+      "ts": "2026-10-03T09:07:00.734Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 7231,
+        "output": 657,
+        "cacheRead": 3072,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1766,
+        "durationMs": 11793
+      },
+      "status": 200,
+      "requestId": "51265e074929a6ee4a24298b30871c75",
+      "credits": 0
+    },
+    {
+      "seq": 51,
+      "ts": "2026-10-03T09:07:18.127Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 1106,
+        "output": 686,
+        "cacheRead": 10240,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 7802,
+        "durationMs": 17291
+      },
+      "status": 200,
+      "requestId": "6ffed8e0f68ea22170c923541c1622e6",
+      "credits": 0
+    },
+    {
+      "seq": 77,
+      "ts": "2026-10-03T09:07:27.590Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 21317,
+        "output": 386,
+        "cacheRead": 10240,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 3130,
+        "durationMs": 9327
+      },
+      "status": 200,
+      "requestId": "f215b9acfc9fc6ba4fee8978a09aba2d",
+      "credits": 0
+    },
+    {
+      "seq": 97,
+      "ts": "2026-10-03T09:07:42.572Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 1784,
+        "output": 859,
+        "cacheRead": 31488,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 1215,
+        "durationMs": 14885
+      },
+      "status": 200,
+      "requestId": "3ca3d14e69ecd65ff032f5bb2fb1f5a5",
+      "credits": 0
+    },
+    {
+      "seq": 117,
+      "ts": "2026-10-03T09:08:41.342Z",
+      "purpose": "inference",
+      "model": "agnes-3.0-flash",
+      "tokens": {
+        "input": 7634,
+        "output": 1313,
+        "cacheRead": 33024,
+        "cacheWrite": 0,
+        "reasoning": 0
+      },
+      "timing": {
+        "ttftMs": 22787,
+        "durationMs": 58680
+      },
+      "status": 200,
+      "requestId": "083a34aa661e4a28df07887d802d6538",
+      "credits": 0
+    }
+  ],
+  "totalTokens": {
+    "input": 39072,
+    "output": 3901,
+    "cacheRead": 88064
+  },
+  "assertions": [
+    {
+      "name": "仅使用 Agnes 模型（agnes-*）",
+      "pass": true,
+      "detail": "agnes-3.0-flash"
+    },
+    {
+      "name": "推理请求发出且返回 200",
+      "pass": true,
+      "detail": "status=200 req=51265e074929a6ee4a24298b30871c75; status=200 req=6ffed8e0f68ea22170c923541c1622e6; status=200 req=f215b9acfc9fc6ba4fee8978a09aba2d; status=200 req=3ca3d14e69ecd65ff032f5bb2fb1f5a5; status=200 req=083a34aa661e4a28df07887d802d6538"
+    },
+    {
+      "name": "存在工具调用链",
+      "pass": true,
+      "detail": "8 次调用"
+    },
+    {
+      "name": "工具返回与调用一一对应",
+      "pass": true,
+      "detail": "0 次缺返回"
+    },
+    {
+      "name": "工具级校验全部通过",
+      "pass": true,
+      "detail": "8 条 tool 级 signal"
+    },
+    {
+      "name": "终态符合预期（completed）",
+      "pass": true,
+      "detail": "实际 turn/end reason = completed"
+    },
+    {
+      "name": "连续步骤 >= 3",
+      "pass": true,
+      "detail": "实际最大 step=5"
+    }
+  ]
+}
