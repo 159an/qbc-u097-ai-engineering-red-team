@@ -51,27 +51,56 @@ def wait_health(url: str, timeout: float = 40.0) -> bool:
     return False
 
 
+def port_alive(host: str, port: int, timeout: float = 0.5) -> bool:
+    """探测目标端口是否已有服务监听。避免反复起服务造成 EADDRINUSE / 空转。"""
+    import socket
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.close()
+        return True
+    except Exception:
+        return False
+
+
 def main() -> int:
     py = pick_python()
     print(f"[runner] python = {py}", flush=True)
 
     procs = []
+    reused = []  # 记录复用了哪些端口（不自己起的）
     try:
-        s1 = subprocess.Popen([py, "-m", "uvicorn", "services.solver.main:app",
-                               "--host", "127.0.0.1", "--port", "8081"],
-                              cwd=REPO, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL,
-                              creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-        s2 = subprocess.Popen([py, "-m", "uvicorn", "services.oracle.main:app",
-                               "--host", "127.0.0.1", "--port", "8082"],
-                              cwd=REPO, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL,
-                              creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-        procs.extend([s1, s2])
+        # 先探测端口是否已被占用（人类终端用 start-all.ps1 已起服务的情况）
+        solver_alive = port_alive("127.0.0.1", 8081)
+        oracle_alive = port_alive("127.0.0.1", 8082)
+        print(f"[runner] port probe: solver(8081)={solver_alive} oracle(8082)={oracle_alive}", flush=True)
+
+        if solver_alive and oracle_alive:
+            print("[runner] both ports already alive -> reuse, skip spawn", flush=True)
+        else:
+            if not solver_alive:
+                s1 = subprocess.Popen([py, "-m", "uvicorn", "services.solver.main:app",
+                                       "--host", "127.0.0.1", "--port", "8081"],
+                                      cwd=REPO, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL,
+                                      creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                procs.append(s1)
+                reused.append("solver-spawned")
+            else:
+                reused.append("solver-reused")
+            if not oracle_alive:
+                s2 = subprocess.Popen([py, "-m", "uvicorn", "services.oracle.main:app",
+                                       "--host", "127.0.0.1", "--port", "8082"],
+                                      cwd=REPO, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL,
+                                      creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                procs.append(s2)
+                reused.append("oracle-spawned")
+            else:
+                reused.append("oracle-reused")
 
         ok1 = wait_health("http://127.0.0.1:8081/health")
         ok2 = wait_health("http://127.0.0.1:8082/health")
-        print(f"[runner] solver ready={ok1} oracle ready={ok2}", flush=True)
+        print(f"[runner] solver ready={ok1} oracle ready={ok2} ({','.join(reused)})", flush=True)
         if not (ok1 and ok2):
             print("[runner] ERROR: service not ready, abort", flush=True)
             return 1
@@ -82,12 +111,12 @@ def main() -> int:
         print(f"[runner] pytest exit={r.returncode}", flush=True)
         return 0 if r.returncode == 0 else 1
     finally:
+        # 只 terminate 自己起的进程；复用的（人类终端常驻）不杀
         for p in procs:
             try:
                 p.terminate()
             except Exception:
                 pass
-        # 兜底杀端口
         time.sleep(1)
         for p in procs:
             try:
