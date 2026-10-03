@@ -39,3 +39,6 @@ ground-truth/
 # ---- Python 依赖缓存 ----
 .venv/
 venv/
+
+# ---- pytest 缓存 ----
+.pytest_cache/

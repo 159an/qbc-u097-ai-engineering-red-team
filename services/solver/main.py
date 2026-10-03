@@ -92,8 +92,7 @@ def _solve_core(payload: dict) -> Any:
 
     u_final = result["u_final"]
     probe_records = result["probe_records"]
-    n = nodes
-    dx = length / n
+    dx = length / (nodes - 1)
     r = result["r"]
     peclet = result["peclet"]
 

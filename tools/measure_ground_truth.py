@@ -161,14 +161,13 @@ def exact_single(x: float, t: float, alpha: float = 1.0, L: float = 1.0,
 # ---------------- P1：FTCS 稳定性临界 r* = 0.5 ----------------
 
 def measure_P1() -> dict:
-    """固定 alpha=1, L=1, nodes=101 (dx=0.01)。二分搜索 dt，
-    找稳定/不稳定的分界。r = alpha*dt/dx^2。
-    稳定判据：tEnd 较大时解不发散（blowUp=False 且 maxAbsU 有界）。
+    """固定 alpha=1, L=1, nodes=101（统一约定：dx=L/(nodes-1)=0.01）。
+    二分搜索 dt，找稳定/不稳定分界。r = alpha*dt/dx^2。
     """
     alpha = 1.0
     L = 1.0
     nodes = 101
-    dx = L / nodes
+    dx = L / (nodes - 1)
     tEnd = 0.1
     tol_r = 0.0005
 
@@ -214,8 +213,8 @@ def measure_P2() -> dict:
     u_ref = exact_single(x_probe, tEnd, alpha, L)
 
     def err_at(nodes: int) -> float:
-        # 保持 r=0.4：dt = 0.4*dx^2/alpha
-        dx = L / nodes
+        # 保持 r=0.4：dt = 0.4*dx^2/alpha（统一约定 dx=L/(nodes-1)）
+        dx = L / (nodes - 1)
         dt = 0.4 * dx * dx / alpha
         steps = int(round(tEnd / dt))
         res = solve("ftcs", alpha, nodes, dt, tEnd, L,
@@ -249,10 +248,10 @@ def measure_P3() -> dict:
     tEnd = 0.5
     x_probe = 0.5
 
-    # 扫 nodes 从 11 到 101，记录 Pe = v*dx/alpha
+    # 扫 nodes 从 11 到 101，记录 Pe = v*dx/alpha（统一约定 dx=L/(nodes-1)）
     samples = []
     for nodes in [11, 15, 21, 31, 51, 101]:
-        dx = L / nodes
+        dx = L / (nodes - 1)
         Pe = v * dx / alpha
         # 保持 r < 0.5：dt = 0.3*dx^2/alpha
         dt = 0.3 * dx * dx / alpha
@@ -266,16 +265,16 @@ def measure_P3() -> dict:
         samples.append({"nodes": nodes, "pe": round(Pe, 3),
                        "oscillates": oscillates, "u_max": round(u_max, 4)})
 
-    # 找最小说振荡的 Pe 阈值
+    # 找最小说振荡的 Pe 阈值（统一约定 dx=L/(nodes-1)，故 nodes=L/dx+1）
     pe_vals = [s["pe"] for s in samples]
     osc_flags = [s["oscillates"] for s in samples]
     # 二分找 Pe 临界（Pe>2 振荡，Pe<2 不振荡）
     lo, hi = min(pe_vals), max(pe_vals)
     for _ in range(20):
         mid = (lo + hi) / 2
-        nodes_mid = round(L / (mid * alpha / v))
+        nodes_mid = int(round(L / (mid * alpha / v) + 1))
         nodes_mid = max(5, nodes_mid)
-        dx = L / nodes_mid
+        dx = L / (nodes_mid - 1)
         Pe = v * dx / alpha
         dt = 0.3 * dx * dx / alpha
         res = solve("ftcs", alpha, nodes_mid, dt, tEnd, L,
@@ -303,7 +302,7 @@ def measure_P4() -> dict:
     alpha = 1.0
     L = 1.0
     nodes = 101
-    dx = L / nodes
+    dx = L / (nodes - 1)  # 统一约定
     tEnd = 0.05
     # r = alpha*dt/dx^2，需 r<=0.5 -> dt <= 0.5*dx^2/alpha
     dt = 0.3 * dx * dx / alpha  # r=0.3 < 0.5 稳定

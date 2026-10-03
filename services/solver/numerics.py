@@ -58,21 +58,21 @@ def validate_params(alpha: float, nodes: int, dt: float, tEnd: float,
 # ----------------------------- 初值 / 边界 -----------------------------
 
 def build_initial(kind: str, amplitude: float, modes: int, nodes: int, length: float) -> np.ndarray:
-    """初始条件。返回 nodes+1 个网格点（含两端 0 和 length）。
+    """初始条件。返回 nodes 个网格点（含两端 0 和 length）。
 
-    网格 x_i = i*dx, i=0..n, dx=length/n。nodes 是区间数（intervals），
-    网格点共 nodes+1 个。内部节点 [1..n-1] 是未知量，两端由边界条件确定。
+    统一约定：nodes = 网格点数，dx = length/(nodes-1)。
+    网格 x_i = i*dx, i=0..nodes-1。内部节点 [1..nodes-2] 是未知量，两端由边界条件确定。
     目前支持 'sin'：A·sin(m·π·x/L)。其他 kind 暂不支持，返回全 0。
     """
     if kind == "sin":
-        x = np.linspace(0.0, length, nodes + 1)
+        x = np.linspace(0.0, length, nodes)
         return amplitude * np.sin(modes * math.pi * x / length)
-    return np.zeros(nodes + 1)
+    return np.zeros(nodes)
 
 
 def _dx_length(length: float, nodes: int) -> float:
-    """网格步长：nodes 个间隔，nodes+1 个网格点。"""
-    return length / nodes
+    """网格步长：nodes 个网格点，nodes-1 个间隔，dx = L/(nodes-1)。"""
+    return length / (nodes - 1)
 
 
 @dataclass
@@ -109,26 +109,25 @@ def _apply_bc_dirichlet(u: np.ndarray, left: BC, right: BC) -> None:
 
 def _laplacian(u: np.ndarray, dx: float, left: BC, right: BC,
                 ghosts: Optional[tuple] = None) -> np.ndarray:
-    """二阶中心差分 Laplacian，对内部节点 [1..n-1]。
-    Neumann 时用幽灵点值。
+    """二阶中心差分 Laplacian，对内部节点 [1..n-2]。
+    n = len(u) = 网格点数。Neumann 时用幽灵点值。
     """
-    n = len(u) - 1
+    n = len(u)  # 网格点数
     lap = np.zeros_like(u)
     if left.kind == "dirichlet" and right.kind == "dirichlet":
         # 内部：(u[i-1] - 2u[i] + u[i+1]) / dx^2
-        lap[1:n] = (u[0:n-1] - 2.0 * u[1:n] + u[2:n+1]) / (dx * dx)
-        # 边界：二阶单侧（Dirichlet 已知，不参与 Laplacian 计算）
-        lap[0] = (u[0] - 2.0 * u[1] + u[2]) / (dx * dx) if n >= 2 else 0.0
-        lap[-1] = (u[-1] - 2.0 * u[-2] + u[-3]) / (dx * dx) if n >= 2 else 0.0
+        lap[1:n-1] = (u[0:n-2] - 2.0 * u[1:n-1] + u[2:n]) / (dx * dx)
+        # 端点：二阶单侧（Dirichlet 已知值直接代入，不参与 Laplacian）
+        lap[0] = 0.0
+        lap[-1] = 0.0
     elif left.kind == "neumann" and right.kind == "neumann":
-        # 两端幽灵点
         gl = ghosts[0] if ghosts else 0.0
         gr = ghosts[1] if ghosts else 0.0
-        # 左端 i=0： (gl - 2u[0] + u[1]) / dx^2
+        # 左端 i=0：(gl - 2u[0] + u[1]) / dx^2
         lap[0] = (gl - 2.0 * u[0] + u[1]) / (dx * dx)
         # 内部
-        lap[1:n] = (u[0:n-1] - 2.0 * u[1:n] + u[2:n+1]) / (dx * dx)
-        # 右端 i=n： (u[n-1] - 2u[n] + gr) / dx^2
+        lap[1:n-1] = (u[0:n-2] - 2.0 * u[1:n-1] + u[2:n]) / (dx * dx)
+        # 右端 i=n-1：(u[n-2] - 2u[n-1] + gr) / dx^2
         lap[-1] = (u[-2] - 2.0 * u[-1] + gr) / (dx * dx)
     else:
         # 混合边界，简化处理
@@ -142,44 +141,47 @@ def _laplacian(u: np.ndarray, dx: float, left: BC, right: BC,
             lap[-1] = (u[-2] - 2.0 * u[-1] + gr) / (dx * dx)
         else:
             lap[-1] = 0.0
-        lap[1:n] = (u[0:n-1] - 2.0 * u[1:n] + u[2:n+1]) / (dx * dx)
+        lap[1:n-1] = (u[0:n-2] - 2.0 * u[1:n-1] + u[2:n]) / (dx * dx)
     return lap
 
 
 def _advective_term(u: np.ndarray, v: float, dx: float) -> np.ndarray:
-    """中心差分对流 v·(u[i+1]-u[i-1])/(2 dx)，仅内部节点。"""
-    n = len(u) - 1
+    """中心差分对流 v·(u[i+1]-u[i-1])/(2 dx)，仅内部节点 [1..n-2]。"""
+    n = len(u)
     adv = np.zeros_like(u)
-    if v == 0.0 or n < 2:
+    if v == 0.0 or n < 3:
         return adv
-    adv[1:n] = v * (u[2:n+1] - u[0:n-1]) / (2.0 * dx)
+    adv[1:n-1] = v * (u[2:n] - u[0:n-2]) / (2.0 * dx)
     return adv
 
 
 def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
                length: float, u0: np.ndarray, left: BC, right: BC,
                advection_v: float, probes: list, record_every: int) -> dict:
-    """显式 FTCS。条件稳定：r = alpha*dt/dx^2 <= 0.5（默认开启 CFL 保护）。"""
+    """显式 FTCS。条件稳定：r = alpha*dt/dx^2 <= 0.5（默认开启 CFL 保护）。
+
+    统一约定：nodes = 网格点数，dx = L/(nodes-1)，所有数组长度 = nodes。
+    """
     global _SHARED_BUF
     dx = _dx_length(length, nodes)
     r = alpha * dt / (dx * dx)
     peclet = advection_v * dx / alpha if advection_v != 0 else 0.0
     steps = int(round(tEnd / dt)) if tEnd > 0 else 0
-    n = nodes
+    n = len(u0)  # = nodes
 
     u = u0.copy()
     if FAULTS.shared_state and _SHARED_BUF is not None:
-        u = _SHARED_BUF.copy()  # 跨请求污染
+        u = _SHARED_BUF.copy()
 
     blowup = False
-    probe_positions = [max(0, min(n, int(round(p * n)))) for p in probes]
+    # 探针归一化坐标 p∈[0,1] → 索引 int(round(p*(n-1)))，范围 [0, n-1]
+    probe_positions = [max(0, min(n - 1, int(round(p * (n - 1))))) for p in probes]
     probe_records = [{"x": probes[i], "points": [{"t": 0.0, "u": float(u[probe_positions[i]])}]} for i in range(len(probes))]
 
     initial_amp = abs(float(np.max(np.abs(u0)))) if u0.size else 1.0
 
     # CFL 保护：默认开启。QBC_FAULT_CFL_GUARD=off 时允许 r>0.5 进入不稳定区。
     if r > 0.5 and not FAULTS.cfl_guard_off:
-        # 直接返回初始值并标记不稳定，不执行迭代
         return {"steps": 0, "r": r, "peclet": peclet, "blowUp": True,
                 "u_final": u, "probe_records": probe_records}
 
@@ -187,7 +189,8 @@ def solve_ftcs(alpha: float, nodes: int, dt: float, tEnd: float,
         t = step * dt
         lap = _laplacian(u, dx, left, right)
         u_new = u.copy()
-        u_new[1:n] = u[1:n] + alpha * dt * lap[1:n] + advection_v * dt * (u[2:n+1] - u[0:n-1]) / (2.0 * dx)
+        # 内部节点 [1, n-2] 更新；端点由边界条件决定
+        u_new[1:n-1] = u[1:n-1] + alpha * dt * lap[1:n-1] + advection_v * dt * (u[2:n] - u[0:n-2]) / (2.0 * dx)
         if left.kind == "dirichlet":
             u_new[0] = left.value
         if right.kind == "dirichlet":
@@ -216,30 +219,28 @@ def solve_btcs(alpha: float, nodes: int, dt: float, tEnd: float,
                advection_v: float, probes: list, record_every: int) -> dict:
     """隐式 BTCS：三对角矩阵 Thomas 求解。无条件稳定，时间一阶。
 
-    语义：nodes 是间隔数，网格点共 nodes+1 个（含两端）。三对角矩阵覆盖全部 nodes+1 个点。
+    统一约定：nodes = 网格点数，dx = L/(nodes-1)，所有数组长度 = nodes。
     """
     dx = _dx_length(length, nodes)
     r = alpha * dt / (dx * dx)
     peclet = advection_v * dx / alpha if advection_v != 0 else 0.0
     steps = max(1, int(round(tEnd / dt))) if tEnd > 0 else 0
     u = u0.copy()
-    n = len(u)  # nodes+1 个网格点，全部参与三对角求解
+    n = len(u)  # = nodes
     blowup = False
 
     # 三对角系数（BTCS：u^{k+1} - r*(u[i+1] - 2u[i] + u[i-1]) = u^k）
-    # 覆盖全部 n 个点，端点由边界条件修改系数
     lower_base = np.full(n, -r)
     middle_base = np.full(n, 1.0 + 2.0 * r)
     upper_base = np.full(n, -r)
     lower_base[0] = 0.0
     upper_base[-1] = 0.0
 
-    probe_positions = [max(0, min(n - 1, int(round(p * nodes)))) for p in probes]
+    probe_positions = [max(0, min(n - 1, int(round(p * (n - 1))))) for p in probes]
     probe_records = [{"x": probes[i], "points": [{"t": 0.0, "u": float(u[probe_positions[i]])}]} for i in range(len(probes))]
 
     for step in range(1, steps + 1):
         t = step * dt
-        # 每步从基线重建系数（避免上一步的边界修正污染）
         lower = lower_base.copy()
         middle = middle_base.copy()
         upper = upper_base.copy()
@@ -254,17 +255,14 @@ def solve_btcs(alpha: float, nodes: int, dt: float, tEnd: float,
             middle[-1] = 1.0 + r
             upper[-1] = 0.0
         if left.kind == "neumann":
-            # 一阶：u[1] - u[0] = g_l*dx -> u[0] - u[1] = -g_l*dx
             rhs[0] = -left.value * dx
             lower[0] = -1.0
             middle[0] = 1.0
         if right.kind == "neumann":
-            # 一阶：u[n] - u[n-1] = g_r*dx -> u[n-1] - u[n] = -g_r*dx
             rhs[-1] = right.value * dx
             upper[-1] = -1.0
             middle[-1] = 1.0
 
-        # Thomas 求解（n 个方程对应 n 个网格点）
         u_new = _thomas(lower, middle, upper, rhs)
         u = u_new
         if _is_blowup(u, abs(float(np.max(np.abs(u0)))) if u0.size else 1.0):
@@ -303,27 +301,26 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
              advection_v: float, probes: list, record_every: int) -> dict:
     """Crank-Nicolson：二阶时间精度，无条件稳定。
 
-    语义：nodes 是间隔数，网格点共 nodes+1 个。三对角矩阵覆盖全部 nodes+1 个点。
+    统一约定：nodes = 网格点数，dx = L/(nodes-1)，所有数组长度 = nodes。
     """
     dx = _dx_length(length, nodes)
     r = alpha * dt / (dx * dx)
     peclet = advection_v * dx / alpha if advection_v != 0 else 0.0
     steps = max(1, int(round(tEnd / dt))) if tEnd > 0 else 0
     u = u0.copy()
-    n = len(u)  # nodes+1
+    n = len(u)  # = nodes
     blowup = False
     c = r / 2.0
 
     # CN： -c*u[i-1]^{k+1} + (1+2c)*u[i]^{k+1} - c*u[i+1]^{k+1}
     #      =  c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k
-    # 覆盖全部 n 个点
     lower_base = np.full(n, -c)
     middle_base = np.full(n, 1.0 + 2.0 * c)
     upper_base = np.full(n, -c)
     lower_base[0] = 0.0
     upper_base[-1] = 0.0
 
-    probe_positions = [max(0, min(n - 1, int(round(p * nodes)))) for p in probes]
+    probe_positions = [max(0, min(n - 1, int(round(p * (n - 1))))) for p in probes]
     probe_records = [{"x": probes[i], "points": [{"t": 0.0, "u": float(u[probe_positions[i]])}]} for i in range(len(probes))]
 
     for step in range(1, steps + 1):
@@ -331,7 +328,7 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
         lower = lower_base.copy()
         middle = middle_base.copy()
         upper = upper_base.copy()
-        # 右端：c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k（内部点）
+        # 右端：c*u[i-1]^k + (1-2c)*u[i]^k + c*u[i+1]^k（内部节点 [1, n-2]）
         rhs_new = np.zeros(n)
         rhs_new[1:n-1] = c * u[0:n-2] + (1.0 - 2.0 * c) * u[1:n-1] + c * u[2:n]
         # 端点：由边界条件决定
@@ -340,7 +337,6 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
             middle[0] = 1.0 + c
             lower[0] = 0.0
         else:
-            # Neumann 一阶：u[0] - u[1] = -g_l*dx
             rhs_new[0] = -left.value * dx
             lower[0] = -1.0
             middle[0] = 1.0
@@ -349,7 +345,6 @@ def solve_cn(alpha: float, nodes: int, dt: float, tEnd: float,
             middle[-1] = 1.0 + c
             upper[-1] = 0.0
         else:
-            # Neumann 一阶：u[n] - u[n-1] = g_r*dx
             rhs_new[-1] = right.value * dx
             upper[-1] = -1.0
             middle[-1] = 1.0

@@ -53,9 +53,10 @@ def test_health_solver():
 
 
 def test_ftcs_r049_converges():
-    # r = alpha*dt/dx^2 = 1 * dt / (1/101)^2 = 10201*dt
-    # 要 r=0.49 -> dt = 0.49/10201 ≈ 4.7999e-5
-    dt = 0.49 / (101.0 * 101.0)
+    # 统一约定：nodes=101 表示 101 个网格点，dx = L/(nodes-1) = 1/100
+    # r = alpha*dt/dx^2 = 1 * dt / 0.01^2 = 10000*dt
+    # 要 r=0.49 -> dt = 0.49/10000 = 4.9e-5
+    dt = 0.49 / (100.0 * 100.0)
     r = solve(base_body(dt=dt, tEnd=0.01))
     assert r.status_code == 200
     j = r.json()
@@ -64,7 +65,7 @@ def test_ftcs_r049_converges():
 
 
 def test_ftcs_r051_blowup():
-    dt = 0.51 / (101.0 * 101.0)
+    dt = 0.51 / (100.0 * 100.0)
     r = solve(base_body(dt=dt, tEnd=0.05))
     assert r.status_code == 200
     j = r.json()
@@ -90,10 +91,11 @@ def test_tend_zero_returns_initial():
     assert r.status_code == 200
     j = r.json()
     assert j["numerics"]["steps"] == 0
-    # 探针值应为初值 A·sin(m·π·x) 在节点处的离散值（x=50/101≈0.495，非精确 0.5）
+    # 统一约定：nodes=101 表示 101 个网格点，dx=1/100
+    # 探针 x=0.5 -> 索引 50 -> 物理 x = 50*0.01 = 0.5（精确落在格点上）
+    # u0 = sin(π*0.5) = 1.0
     u500 = [p for p in j["probes"] if math.isclose(p["x"], 0.5)][0]["points"][0]["u"]
-    # 节点 50 在 nodes=101 时 x=50/101，sin(π·50/101)≈0.99988，放宽到 0.01
-    assert math.isclose(u500, math.sin(math.pi * 50 / 101), abs_tol=1e-6)
+    assert math.isclose(u500, 1.0, abs_tol=1e-6)
 
 
 def test_probe_out_of_range_400():

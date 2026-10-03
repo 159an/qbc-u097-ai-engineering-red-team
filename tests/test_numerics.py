@@ -50,7 +50,7 @@ def _payload(scheme: str, dt: float) -> dict:
     return {
         "scheme": scheme,
         "alpha": ALPHA,
-        "nodes": NODES,
+        "nodes": NODES,  # 网格点数（含两端）
         "dt": dt,
         "tEnd": TEND,
         "length": L,
