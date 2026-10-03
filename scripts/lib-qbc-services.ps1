@@ -19,6 +19,7 @@
 #   Kill-ServicePid  [string]$Name          -> [bool] (true if killed or already gone)
 #   Remove-ServicePid [string]$Name         -> deletes logs\<name>.pid
 #   Get-ServicePids  [string]$Name = "all"   -> [int[]]  (from pid files, no WMI)
+#   Stop-ServicePids [int[]]$Pids            -> [int]    (kills pids, returns count actually killed)
 
 $ErrorActionPreference = "Stop"
 
@@ -73,6 +74,22 @@ function Kill-ServicePid([string]$Name) {
 function Remove-ServicePid([string]$Name) {
     $f = Join-Path (Get-LogDir) "$Name.pid"
     if (Test-Path $f) { Remove-Item -Path $f -Force -ErrorAction SilentlyContinue }
+}
+
+# Kill a set of pids (from pid files). Tolerates already-gone pids; returns
+# how many were actually stopped. Used by stop-all.ps1's CIM channel.
+function Stop-ServicePids([int[]]$Pids) {
+    $killed = 0
+    foreach ($pidNum in $Pids) {
+        if ($pidNum -le 0) { continue }
+        try {
+            Stop-Process -Id $pidNum -Force -ErrorAction Stop
+            $killed++
+        } catch {
+            Write-Warning "stop pid $pidNum threw: $_ (may already be gone)"
+        }
+    }
+    return $killed
 }
 
 # Return pids for one or both services from the pid files (no WMI).
