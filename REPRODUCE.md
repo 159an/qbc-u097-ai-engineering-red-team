@@ -123,10 +123,10 @@ python -m pip install -r requirements.txt
 # 2. 起服务（solver 8081 / oracle 8082），两个 /health 均应 200
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-all.ps1
 
-# 3. 端到端自检：对已起好的 8081/8082 逐项打 /health + 边界探测（14 项，
-#    纯确定性数值代码、不含 LLM 调用），期望 14/14 全部通过
-#    （逐项目前由 §6 步骤 2 的 /health 探测 + 步骤 3 回归测试中的边界断言共同覆盖，
-#     对应 14 项实测记录见 evidence/ 与 ground-truth/ground-truth.json）
+# 3. 端到端自检（14 项，纯标准库、不含 LLM 调用），期望「通过 14 / 14」
+python tools\e2e_acceptance.py
+#    （脚本内部先探测 8081/8082 两个 /health，不可用则 exit 1；
+#     逐条 PASS/FAIL 后打印「通过 N / 14」；详见 evidence/12-d5-start-stop-clean.txt §3）
 
 # 4. 全量回归测试（期望 22 passed）
 python tools\run_tests.py
@@ -166,10 +166,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\stop-all.ps1
 # 1. 启动两个服务（solver 8081 / oracle 8082）
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-all.ps1
 
-# 2. 两个 /health 均应返回 200 + 端到端自检（14 项，纯确定性、不含 LLM）
+# 2. 两个 /health 均应返回 200 + 端到端自检（14 项，纯标准库、不含 LLM）
 #    GET http://127.0.0.1:8081/health
 #    GET http://127.0.0.1:8082/health
-#    两项 /health 均 200，加上 12 项边界/物理判据探测，合计 14/14
+#    两项 /health 均 200 后，运行端到端自检脚本（14 项：含上表全部 12 项边界/物理判据 + 2 项 oracle /health/有闭式解探测）
+python tools\e2e_acceptance.py   # 期望输出末行「通过 14 / 14」，exit 0
 
 # 3. 全量回归测试（期望 22 passed）
 python tools\run_tests.py
