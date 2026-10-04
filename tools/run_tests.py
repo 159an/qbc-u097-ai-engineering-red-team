@@ -16,19 +16,39 @@ import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 选含 uvicorn 的 python
-CANDIDATES = [
-    os.environ.get("QBC_PYTHON", ""),
-    r"C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe",
-    r"C:\Users\26293\AppData\Local\Programs\Python\Python311\python.exe",
-    "python",
-]
+# 选含 uvicorn 的 python（不含任何写死的本机用户名/绝对路径；优先级：
+#   1) 环境变量 QBC_PYTHON  2) PATH 上的 python/python3  3) 当前解释器 sys.executable
+#   4) %LOCALAPPDATA%\Programs\Python\Python3*\python.exe 通配（本机常见默认安装位置）
+# 保持与旧版一致的「按优先级 + 兜底」行为与输出格式（print(f"[runner] python = {py}")）。
+import glob as _glob
+import shutil as _shutil
+
+
+def _candidate_pythons() -> list[str]:
+    cands: list[str] = []
+    qbc = os.environ.get("QBC_PYTHON", "")
+    if qbc:
+        cands.append(qbc)
+    for name in ("python", "python3"):
+        found = _shutil.which(name)
+        if found:
+            cands.append(found)
+    cands.append(sys.executable)
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    if localappdata:
+        pattern = os.path.join(localappdata, "Programs", "Python", "Python3*", "python.exe")
+        cands.extend(sorted(_glob.glob(pattern), reverse=True))  # 版本高的优先
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in cands:
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
 
 
 def pick_python() -> str:
-    for c in CANDIDATES:
-        if not c:
-            continue
+    for c in _candidate_pythons():
         try:
             r = subprocess.run([c, "-c", "import uvicorn"],
                                capture_output=True, timeout=15)

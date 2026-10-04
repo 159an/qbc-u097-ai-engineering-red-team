@@ -7,11 +7,11 @@
     test_cn_probe_exists / test_cn_accuracy_vs_oracle 均真实执行 PASSED（见下方 [10%]/[15%]/[25%]/[30%]）
   - 重跑命令：python tools/run_tests.py（自包含起服务→pytest→停服务，无管道阻塞）
 --- 以下为原始输出 ---
-[runner] python = C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+[runner] python = C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe
 [runner] port probe: solver(8081)=False oracle(8082)=False
 [runner] solver ready=True oracle ready=True (solver-spawned,oracle-spawned)
 ============================= test session starts =============================
-platform win32 -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+platform win32 -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe
 cachedir: .pytest_cache
 rootdir: D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
 plugins: anyio-4.15.1

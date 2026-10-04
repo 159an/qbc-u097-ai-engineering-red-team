@@ -14,7 +14,7 @@
 [stop] done: both /health endpoints down          -> exit 0
 
 [start（立即返回）]
-[info] python: C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+[info] python: C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe
 solver pid=30884 oracle pid=28460
 [ok] both ready (dual-channel A=HTTP / B=CIM). stop with scripts\stop-all.ps1   -> exit 0
 

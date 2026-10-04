@@ -2,7 +2,7 @@
 
 复现命令（仓库根目录，PowerShell 5.1）：
   cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
-  $env:QBC_PYTHON="C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe"
+  $env:QBC_PYTHON="C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe"
   $env:PYTHONIOENCODING="utf-8"
   python - <<'PY'
   import sys; sys.path.insert(0,'.')

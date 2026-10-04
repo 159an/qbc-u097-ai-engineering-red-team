@@ -2,7 +2,7 @@
 
 复现命令（仓库根目录，PowerShell 5.1）：
   cd D:\deepseekharness\黑客松\qbc-u097-ai-engineering-red-team
-  $env:QBC_PYTHON="C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe"
+  $env:QBC_PYTHON="C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe"
   $env:PYTHONIOENCODING="utf-8"
   python tools/measure_ground_truth.py   # B 角色本地产出 ground-truth/ground-truth.json（不入仓）
   # 或无服务、直接跑 solver 复现判据：

@@ -1,7 +1,7 @@
-﻿[runner] python = C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+﻿[runner] python = C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe
 [runner] solver ready=True oracle ready=True
 ============================= test session starts =============================
-platform win32 -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+platform win32 -- Python 3.13.7, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe
 cachedir: .pytest_cache
 rootdir: D:\deepseekharness\�ڿ���\qbc-u097-ai-engineering-red-team
 plugins: anyio-4.15.1

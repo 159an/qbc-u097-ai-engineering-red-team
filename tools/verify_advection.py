@@ -9,14 +9,35 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOLVER = "http://127.0.0.1:8081"
 ORACLE = "http://127.0.0.1:8082"
 
-def pick_python() -> str:
-    cands = [os.environ.get("QBC_PYTHON", ""),
-             r"C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe",
-             r"C:\Users\26293\AppData\Local\Programs\Python\Python311\python.exe",
-             "python"]
+import glob as _glob
+import shutil as _shutil
+
+
+def _candidate_pythons() -> list[str]:
+    cands: list[str] = []
+    qbc = os.environ.get("QBC_PYTHON", "")
+    if qbc:
+        cands.append(qbc)
+    for name in ("python", "python3"):
+        found = _shutil.which(name)
+        if found:
+            cands.append(found)
+    cands.append(sys.executable)
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    if localappdata:
+        pattern = os.path.join(localappdata, "Programs", "Python", "Python3*", "python.exe")
+        cands.extend(sorted(_glob.glob(pattern), reverse=True))  # 版本高的优先
+    seen: set[str] = set()
+    out: list[str] = []
     for c in cands:
-        if not c:
-            continue
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def pick_python() -> str:
+    for c in _candidate_pythons():
         try:
             r = subprocess.run([c, "-c", "import uvicorn"], capture_output=True, timeout=15)
             if r.returncode == 0:

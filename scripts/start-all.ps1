@@ -27,17 +27,24 @@ Set-Location $repoRoot
 . (Join-Path $repoRoot "scripts\lib-qbc-services.ps1")
 
 # --- pick python that has uvicorn (avoid miniconda) ---
+# 优先级（不含任何写死的本机用户名/绝对路径）：
+#   1) 环境变量 QBC_PYTHON  2) PATH 上的 python/python3  3) %LOCALAPPDATA%\Programs\Python\Python3*\python.exe 通配（版本高者优先）
 $PY = $env:QBC_PYTHON
 if (-not $PY) {
     $candidates = @()
     $cmd = Get-Command python -ErrorAction SilentlyContinue
     if ($cmd) { $candidates += $cmd.Source }
-    $candidates += @(
-        "C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe",
-        "C:\Users\26293\AppData\Local\Programs\Python\Python311\python.exe"
-    )
+    $cmd3 = Get-Command python3 -ErrorAction SilentlyContinue
+    if ($cmd3) { $candidates += $cmd3.Source }
+    $localAppData = $env:LOCALAPPDATA
+    if ($localAppData) {
+        $globPattern = Join-Path $localAppData "Programs\Python\Python3*\python.exe"
+        $foundPy = Get-ChildItem -Path $globPattern -File -ErrorAction SilentlyContinue |
+                   Sort-Object FullName -Descending
+        foreach ($m in $foundPy) { $candidates += $m.FullName }
+    }
     foreach ($c in $candidates) {
-        if (Test-Path $c) {
+        if ($c -and (Test-Path $c)) {
             try {
                 & $c -c "import uvicorn" 2>&1 | Out-Null
                 if ($LASTEXITCODE -eq 0) { $PY = $c; break }

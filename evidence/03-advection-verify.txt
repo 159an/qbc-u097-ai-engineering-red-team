@@ -1,4 +1,4 @@
-﻿[adv-verify] python = C:\Users\26293\AppData\Local\Programs\Python\Python313\python.exe
+﻿[adv-verify] python = C:\Users\<user>\AppData\Local\Programs\Python\Python313\python.exe
 
 === 无对流（纯扩散，tEnd=0.1 时峰大幅衰减）===
   u(0.3) = 0.009513
