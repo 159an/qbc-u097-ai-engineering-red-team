@@ -15,15 +15,15 @@ Set-Location $repoRoot
 
 Write-Host "[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ..." -ForegroundColor Cyan
 
-# Channel B: CIM-match and kill every matching process
+# Channel B: read pid files and kill every recorded process
 $pids = Get-ServicePids
-if ($pids.Count -gt 0) {
-    Write-Host "  CIM matched $($pids.Count) service process(es): $($pids -join ', ')"
-    $k = Stop-ServicePids -Pids $pids
-    Write-Host "  terminated $k process(es)"
-} else {
-    Write-Host "  CIM: no 'uvicorn services.(solver|oracle).main:app' processes found"
+if ($pids.Count -eq 0) {
+    Write-Host "[stop] no pid files; nothing to stop" -ForegroundColor Cyan
+    exit 0
 }
+Write-Host "  pid files matched $($pids.Count) service process(es): $($pids -join ', ')"
+$k = Stop-ServicePids -Pids $pids
+Write-Host "  terminated $k process(es)"
 
 # Channel A: HTTP re-check after a short grace
 Start-Sleep -Milliseconds 400
@@ -36,6 +36,8 @@ if ($h.Solver -or $h.Oracle) {
 }
 
 if (-not $h.Solver -and -not $h.Oracle) {
+    Remove-ServicePid "solver"
+    Remove-ServicePid "oracle"
     Write-Host "[stop] done: both /health endpoints down" -ForegroundColor Green
     exit 0
 }

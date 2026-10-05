@@ -77,7 +77,7 @@ function Remove-ServicePid([string]$Name) {
 }
 
 # Kill a set of pids (from pid files). Tolerates already-gone pids; returns
-# how many were actually stopped. Used by stop-all.ps1's CIM channel.
+# how many were actually stopped. Used by stop-all.ps1's pid-file channel.
 function Stop-ServicePids([int[]]$Pids) {
     $killed = 0
     foreach ($pidNum in $Pids) {
