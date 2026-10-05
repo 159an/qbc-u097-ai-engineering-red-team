@@ -18,7 +18,7 @@ Write-Host "[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) 
 # Channel B: read pid files and kill every recorded process
 $pids = Get-ServicePids
 if ($pids.Count -eq 0) {
-    Write-Host "[stop] no pid files; nothing to stop" -ForegroundColor Cyan
+    Write-Host "[stop] no pid files; nothing to stop" -ForegroundColor Green
     exit 0
 }
 Write-Host "  pid files matched $($pids.Count) service process(es): $($pids -join ', ')"
