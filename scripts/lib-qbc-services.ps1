@@ -103,3 +103,32 @@ function Get-ServicePids([string]$Name = "all") {
     }
     return $out
 }
+
+# Find the PID actually owning a listening TCP port (no CIM; netstat -ano fallback).
+# Tries Get-NetTCPConnection first (clean); falls back to netstat -ano parsing if
+# Get-NetTCPConnection is unavailable / unpermitted in this environment.
+function Get-ListenerPidByPort([int]$Port) {
+    try {
+        $c = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop
+        if ($c) { return [int]$c.OwningProcess }
+    } catch {}
+    # Fallback: netstat -ano (works without admin in most Windows setups)
+    $out = & netstat -ano 2>$null
+    foreach ($line in $out) {
+        if ($line -match ('\s' + [regex]::Escape('TCP') + '\s' ) -and $line -match (":\d+\s+.*LISTENING\s+(\d+)\s*$") -and ($line -match ("127\.0\.0\.1:" + $Port + "\b"))) {
+            return [int]$matches[1]
+        }
+    }
+    return 0
+}
+
+# Kill a set of pids and return how many were actually terminated.
+function Stop-ListenerPid([int]$PidNum) {
+    if ($PidNum -le 0) { return $false }
+    try {
+        Stop-Process -Id $PidNum -Force -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}

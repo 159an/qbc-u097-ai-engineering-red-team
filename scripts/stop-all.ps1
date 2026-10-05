@@ -15,23 +15,44 @@ Set-Location $repoRoot
 
 Write-Host "[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ..." -ForegroundColor Cyan
 
-# Channel B: read pid files and kill every recorded process
+# --- Channel 1: pid-file kill (primary) ---
 $pids = Get-ServicePids
 if ($pids.Count -eq 0) {
-    Write-Host "[stop] no pid files; nothing to stop" -ForegroundColor Green
-    exit 0
+    Write-Host "[stop] no pid files found; will rely solely on /health + port-based fallback (channel 2)"
+} else {
+    Write-Host "  pid files matched $($pids.Count) service process(es): $($pids -join ', ')"
+    $k = Stop-ServicePids -Pids $pids
+    Write-Host "  terminated $k process(es) via pid files"
 }
-Write-Host "  pid files matched $($pids.Count) service process(es): $($pids -join ', ')"
-$k = Stop-ServicePids -Pids $pids
-Write-Host "  terminated $k process(es)"
 
-# Channel A: HTTP re-check after a short grace
+# --- Channel 2: HTTP re-check + port-based fallback (authoritative liveness gate) ---
 Start-Sleep -Milliseconds 400
 $h = Test-ServiceHealth
 if ($h.Solver -or $h.Oracle) {
-    Write-Warning "  still alive after kill (solver=$($h.Solver) oracle=$($h.Oracle)) - retrying"
-    $pids2 = Get-ServicePids
-    if ($pids2.Count -gt 0) { Stop-ServicePids -Pids $pids2 | Out-Null; Start-Sleep -Milliseconds 400 }
+    # pid files were missing/stale OR the recorded pids already exited -
+    # re-locate the ACTUAL listener PID by port and kill it (honest channel 2).
+    $fallbackUsed = $false
+    if ($h.Solver) {
+        $p = Get-ListenerPidByPort 8081
+        if ($p -gt 0 -and (Get-Process -Id $p -ErrorAction SilentlyContinue)) {
+            $ok = Stop-ListenerPid $p
+            Write-Host "  [fallback] solver still up; killed real listener pid=$p via port 8081 owner ($($ok))"
+            $fallbackUsed = $true
+        } else {
+            Write-Warning "  [fallback] solver /health up but no live listener pid found on 8081"
+        }
+    }
+    if ($h.Oracle) {
+        $p = Get-ListenerPidByPort 8082
+        if ($p -gt 0 -and (Get-Process -Id $p -ErrorAction SilentlyContinue)) {
+            $ok = Stop-ListenerPid $p
+            Write-Host "  [fallback] oracle still up; killed real listener pid=$p via port 8082 owner ($($ok))"
+            $fallbackUsed = $true
+        } else {
+            Write-Warning "  [fallback] oracle /health up but no live listener pid found on 8082"
+        }
+    }
+    Start-Sleep -Milliseconds 400
     $h = Test-ServiceHealth
 }
 
@@ -41,5 +62,5 @@ if (-not $h.Solver -and -not $h.Oracle) {
     Write-Host "[stop] done: both /health endpoints down" -ForegroundColor Green
     exit 0
 }
-Write-Warning "[stop] FAIL: service(s) still alive (solver=$($h.Solver) oracle=$($h.Oracle))"
+Write-Warning "[stop] FAIL: service(s) still alive after pid-file + port-based channels (solver=$($h.Solver) oracle=$($h.Oracle)) - manual intervention needed"
 exit 1

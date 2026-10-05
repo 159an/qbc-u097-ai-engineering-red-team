@@ -95,12 +95,33 @@ function Wait-For-Health([string]$Url, [int]$TimeoutSec) {
 }
 
 # Launch both, capture PIDs to files, redirect streams to files.
-$ps1 = Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.solver.main:app","--host","127.0.0.1","--port","8081" -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "solver.log") -RedirectStandardError (Join-Path $logDir "solver.err.log")
-$ps2 = Start-Process -FilePath $PY -ArgumentList "-m","uvicorn","services.oracle.main:app","--host","127.0.0.1","--port","8082" -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "oracle.log") -RedirectStandardError (Join-Path $logDir "oracle.err.log")
+# No powershell wrapper: invoke the python interpreter directly via Start-Process.
+$ps1 = Start-Process -FilePath $PY -ArgumentList @('-m','uvicorn','services.solver.main:app','--host','127.0.0.1','--port','8081') -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "solver.log") -RedirectStandardError (Join-Path $logDir "solver.err.log")
+$ps2 = Start-Process -FilePath $PY -ArgumentList @('-m','uvicorn','services.oracle.main:app','--host','127.0.0.1','--port','8082') -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir "oracle.log") -RedirectStandardError (Join-Path $logDir "oracle.err.log")
 
 if ($ps1.Id -gt 0) { Write-ServicePid "solver" $ps1.Id }
 if ($ps2.Id -gt 0) { Write-ServicePid "oracle" $ps2.Id }
-Write-Host "[start] solver pid=$($ps1.Id) -> logs\solver.pid ; oracle pid=$($ps2.Id) -> logs\oracle.pid"
+Write-Host "[start] solver pid=$($ps1.Id) -> logs\solver.pid ; oracle pid=$($ps2.Id) -> logs\oracle.pid (initial, pre-verification)"
+
+# --- verify the recorded PID is still alive ~1s later; if the launched process
+# exited early (e.g. handed off the socket to a child / transient wrapper),
+# re-locate the ACTUAL listener PID by port and rewrite the pid file. ---
+Start-Sleep -Seconds 1
+$solverPid = $ps1.Id
+$oraclePid = $ps2.Id
+$solverChan = "pid-file direct"
+$oracleChan = "pid-file direct"
+if (-not (Get-Process -Id $solverPid -ErrorAction SilentlyContinue)) {
+    $located = Get-ListenerPidByPort 8081
+    if ($located -gt 0) { $solverPid = $located; $solverChan = "relocated via port 8081 owner" }
+}
+if (-not (Get-Process -Id $oraclePid -ErrorAction SilentlyContinue)) {
+    $located = Get-ListenerPidByPort 8082
+    if ($located -gt 0) { $oraclePid = $located; $oracleChan = "relocated via port 8082 owner" }
+}
+if ($solverPid -gt 0) { Write-ServicePid "solver" $solverPid }
+if ($oraclePid -gt 0) { Write-ServicePid "oracle" $oraclePid }
+Write-Host "[start] verified: solver pid=$solverPid ($solverChan) ; oracle pid=$oraclePid ($oracleChan)"
 
 $ok1 = Wait-For-Health "http://127.0.0.1:8081/health" 40
 $ok2 = Wait-For-Health "http://127.0.0.1:8082/health" 40

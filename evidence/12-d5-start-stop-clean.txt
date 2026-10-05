@@ -67,3 +67,49 @@ python tools\run_tests.py
 ```
 
 > 一行结论：`无回归：python tools\run_tests.py -> 22 passed`。
+
+---
+
+## 补充（PID 生命周期缺陷修复前后对照，2026-10-05）
+
+> 背景：早期版本 start-all 记录的 PID 是 `python -m uvicorn` 的**父解释器进程**，而非真正持有 8081/8082 socket 的监听进程；父进程启动完成后很快自行退出（socket 已被子进程接管），导致 stop-all 有时拿到 `terminated 0 + 2 条警告`（pid 文件指向已不存在的进程），有时 `terminated 2`（父进程恰好还活着）。这是"PID 生命周期"缺陷，非偶发时序问题。
+
+### 修复前（真实输出，未美化）
+
+```
+[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ...
+  pid files matched 2 service process(es): 39708, 7468
+WARNING: stop pid 39708 threw: Cannot find a process with the process identifier 39708. (may already be gone)
+WARNING: stop pid 7468 threw: Cannot find a process with the process identifier 7468. (may already be gone)
+  terminated 0 process(es)
+[stop] done: both /health endpoints down
+stop_exit=0
+```
+（`terminated 0` 但 `/health` 已 down、exit 0 —— 表面"成功"，实际没有任何进程被 kill，误导排查。）
+
+### 修复后（真实输出）
+
+start-all 新增：`Start-Sleep 1s` 后校验记录的 PID 是否仍存活，不存活则 `Get-ListenerPidByPort`（先试 `Get-NetTCPConnection`，回退 `netstat -ano`）按端口定位**真正**持有 socket 的监听进程 PID 重写 pid 文件；stop-all 新增：pid 文件通道失效/为空时，强制走 `/health` + 按端口定位的 fallback 通道真正 kill，**不允许**"假成功"（停不掉必须 exit 1）。
+
+```
+[start] solver pid=10600 -> logs\solver.pid ; oracle pid=24072 -> logs\oracle.pid (initial, pre-verification)
+[start] verified: solver pid=10600 (pid-file direct) ; oracle pid=24072 (pid-file direct)
+solver ready=True oracle ready=True
+[ok] both ready (HTTP /health up, PIDs recorded in logs\). stop with scripts\stop-all.ps1
+
+# 正常路径（pid 文件有效）：
+[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ...
+  pid files matched 2 service process(es): 10600, 24072
+  terminated 2 process(es) via pid files
+[stop] done: both /health endpoints down
+stop_exit=0
+
+# 极端路径（手动删除 pid 文件、服务仍在跑）：
+[stop] stopping uvicorn services on 8081 (solver) and 8082 (oracle) ...
+[stop] no pid files found; will rely solely on /health + port-based fallback (channel 2)
+  [fallback] solver still up; killed real listener pid=10600 via port 8081 owner (True)
+  [fallback] oracle still up; killed real listener pid=24072 via port 8082 owner (True)
+[stop] done: both /health endpoints down
+stop_exit=0
+（随后 127.0.0.1:8081/8082 均 unreachable，确认真实停止，非假成功）
+```
