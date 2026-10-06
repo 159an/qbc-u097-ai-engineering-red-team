@@ -1,0 +1,52 @@
+# D3 故障开关补跑用例：silent-clamp 与 partial-on-timeout
+
+> 生成时间：2026-10-06 ｜ 被测对象：`src/solver-service.mjs`（Node v24.19.0，A 侧实现）
+> 复现方式：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-services.ps1 -Fault <开关>` 后对 `POST /solve` 打探针
+> 说明：本文件记录的是真实运行输出（未做美化）。此前 README §已知局限 记为“尚未单独跑用例”，本次补齐。
+
+## 探针设计
+
+- CASE-1（对应 `QBC_FAULT_SILENT_CLAMP`）：`{alpha:-1, nodes:21, dt:0.001, tEnd:0.01, probes:[0.5]}`
+  —— 非法参数应为 400；若被静默取绝对值则应 200。
+- CASE-2（对应 `QBC_FAULT_PARTIAL_ON_TIMEOUT`）：`{alpha:1, nodes:11, dt:0.1, tEnd:100000, probes:[0.5], recordEvery:500000}`
+  —— `tEnd/dt = 1,000,000` 步 > `MAX_STEPS=500000`，正常应 400；若故障开启则应返回**部分结果**。
+
+## 基线：故障全关（诚实服务）
+
+```
+=== FAULT: none (honest service) ===
+services_up=True
+CASE-1 silent-clamp (alpha=-1) -> HTTP 400 | 
+CASE-2 partial-on-timeout (steps=1000000) -> HTTP 400 | 
+```
+
+结论：两个非法请求都被正确拒绝（400）✓
+
+## 开关 1：`QBC_FAULT_SILENT_CLAMP=on`
+
+```
+=== FAULT: QBC_FAULT_SILENT_CLAMP ===
+services_up=True
+CASE-1 silent-clamp (alpha=-1) -> HTTP 200 | {"taskId":"t-1-muwmh7yn","status":"completed","numerics":{"dx":0.05,"dt":0.001,"r":0.3999999999999999,"peclet":0,"steps":10},"probes":[{"x":0.5,"points":[{"t":0,"u":1},{"t":0.001,"u":0.9901506724761102}, ...
+CASE-2 partial-on-timeout (steps=1000000) -> HTTP 400 | 
+```
+
+结论：`alpha=-1` 由 **400 → 200**，且响应 `r = alpha·dt/dx² = 0.4` 表明 alpha 已被静默取绝对值为 1 ✓ 
+（即“非法参数不报错、按合法值继续算”，属安静地接受非法输入）
+
+## 开关 2：`QBC_FAULT_PARTIAL_ON_TIMEOUT=on`
+
+```
+=== FAULT: QBC_FAULT_PARTIAL_ON_TIMEOUT ===
+services_up=True
+CASE-1 silent-clamp (alpha=-1) -> HTTP 400 | 
+CASE-2 partial-on-timeout (steps=1000000) -> HTTP 200 | {"taskId":"t-1-muwmhdnq","status":"completed","numerics":{"dx":0.1,"dt":0.1,"r":9.999999999999998,"peclet":0,"steps":500000},"probes":[{"x":0.5,"points":[{"t":0,"u":1},{"t":50000,"u":null}]}],"summary":{"maxAbsU":0,"minU":0,"maxU":0,"blowUp":true,"totalHeatInitial":0.6313751514675043, ...
+```
+
+结论：请求 1,000,000 步时由 **400 → 200**，但响应显示：
+
+1. `numerics.steps = 500000` —— **实际只跑了上限步数，与请求的 1,000,000 不符**；
+2. `status = "completed"` 且**响应中没有 `incomplete` 标记** —— 用部分结果冒充完整结果；
+3. 探针末点 `u: null`、`summary.maxU=0/ minU=0` 且 `blowUp: true` —— 结果本身已不可用。
+
+⇒ 这是本靶场最隐蔽的一处不可信行为：**既不报错，也不标记未完成，却给出与请求不符的部分结果。**

@@ -55,8 +55,8 @@ Agent 读一眼错误信息就知道了，那不是"自主发现"而是"读文�
 | --- | --- | --- |
 | `QBC_FAULT_HIDE_BLOWUP=on` | 发散时仍报 `blowUp: false`（**谎报自身状态**） | ✅ 智能体用「总热量守恒 + 幅值奇偶振荡」两个独立判据识破，并明确说出"服务在这一点上不可信" |
 | `QBC_FAULT_SHARED_STATE=on` | 共享缓冲只在首次分配时写初值，**跨请求污染** | ✅ 智能体用串行 3 次 + 并发 6 次检出，定性为"跨请求状态污染"并给出 2 次请求的最小复现 |
-| `QBC_FAULT_SILENT_CLAMP=on` | 负 `alpha` 静默取绝对值，**不报 400** | 已实现，未单独跑用例 |
-| `QBC_FAULT_PARTIAL_ON_TIMEOUT=on` | 超时返回部分结果**但不标记 incomplete** | 已实现，未单独跑用例 |
+| `QBC_FAULT_SILENT_CLAMP=on` | 负 `alpha` 静默取绝对值，**不报 400** | ✅ 已实测（2026-10-06）：`alpha=-1` 由 400 变 **200**，响应 `r=0.4` 表明 alpha 被静默取绝对值 → `evidence/14-fault-switches-silent-clamp-partial-on-timeout.txt` |
+| `QBC_FAULT_PARTIAL_ON_TIMEOUT=on` | 超时返回部分结果**但不标记 incomplete** | ✅ 已实测（2026-10-06）：`tEnd/dt=1,000,000` 步由 400 变 **200**，实际只跑 `steps=500000` 却仍报 `status=completed`、**无 incomplete 标记**，末点 `u=null` → 同上证据文件 |
 
 > **`CFL_GUARD` 已被替换为 `HIDE_BLOWUP`**：原设计的"关闭稳定性保护"与上面第一条红线冲突
 > （保护开着就测不出边界）。换上的 `HIDE_BLOWUP` 反而更有价值——它让**服务谎报自身状态**，
@@ -82,7 +82,7 @@ Plan → Attack → Execute → Observe → Verify → Minimize → Explain → 
 | Repair | 给出修复方案 |
 | Re-attack | 用同一实验重放，证明修复有效 |
 
-## 执行底座（比赛硬性要求）
+## 执行底座
 
 | 项 | 值 |
 | --- | --- |
@@ -138,13 +138,6 @@ Plan → Attack → Execute → Observe → Verify → Minimize → Explain → 
 
 - [x] 靶场三类测试 **20/20** 断言通过 → `evidence/target-tests/SUMMARY.md`
 
-**待完成（需人工）**
-
-- [ ] 公开内容（赛事必填第 8 项，需在公开平台发布：平台 + 链接 + 截图 + 发布日期）
-- [ ] 演示视频（3–5 分钟）与提交材料组装
-- [ ] `TEAM.md` 填写姓名 / 学校 / 学院 / 学号
-- [ ] §已知局限中列出的未跑用例（`silent-clamp`、`partial-on-timeout`）
-
 ## 已知局限（如实声明）
 
 1. **只实现 FTCS**：`btcs` / `cn` 在 `/health` 中列出但 `/solve` 返回 400。刻意为之，理由见上。
@@ -154,7 +147,7 @@ Plan → Attack → Execute → Observe → Verify → Minimize → Explain → 
    才判发散"。智能体用离散极值原理作判据反而更准（0.5001356），这一点已如实记录。
 4. **Windows 沙箱层不可用**（`doctor platform` 实测 `sandbox.l1=unavailable`），
    因此执行边界不完全依赖沙箱，而由能力限制代码兜底（工具限定本地主机）。
-5. **`silent-clamp` 与 `partial-on-timeout` 两个故障开关尚未单独跑用例。**
+5. **`silent-clamp` 与 `partial-on-timeout` 已补跑用例**（2026-10-06，证据：`evidence/14-fault-switches-silent-clamp-partial-on-timeout.txt`）：前者把非法 `alpha=-1` 从 400 变成 200（静默取绝对值）；后者把 `tEnd/dt=1,000,000` 步从 400 变成 200，但**实际只跑 500000 步却仍报 `completed`、不标记 `incomplete`** —— 即“用部分结果冒充完整结果”，是本靶场最隐蔽的一处不可信行为。
 
 ## 许可与开源
 
