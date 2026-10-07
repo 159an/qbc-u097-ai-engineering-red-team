@@ -6,13 +6,7 @@
 
 ## 首个验证对象：工程传热求解服务
 
-> **方向变更说明**：初稿的验证对象是"虚拟电商业务系统"，现已**改为工程传热求解服务**。
-> 原因：数值求解器的"对错"由**解析解**客观判定，不需要人肉判断业务规则；它的失效边界（稳定性、边界处理、并发隔离、超时语义）都有严格数学定义，因此"发现 → 复现 → 修复 → 再验证"是可自动判定、可复现的。
-
-> **实现归属说明（2026-10-03 夜间对齐）**：本 README 此前描述的 `services/solver/`（FastAPI/Python）
-> 是一份**规划**；实际建成并已验证的实现位于 `src/solver-service.mjs` 与 `src/oracle-service.mjs`
-> （Node.js，零第三方依赖）。本节以下内容已按**实际建成的实现**校正，
-> 并标出三处被实测推翻的原设计。若后续决定改用 Python 实现，请连同本节一起更新。
+> **实现说明**：仓库同时包含两套实现——`src/`（Node.js，红队早期靶场）与 `services/`（Python/FastAPI，当前主靶场，见 [REPRODUCE.md](REPRODUCE.md)）。本 README 以下小节以 `src/` 为例说明接口契约，两者的 `/solve` 语义一致。
 
 ### 被测系统 SUT — `src/solver-service.mjs`（D1）
 
@@ -149,6 +143,3 @@ Plan → Attack → Execute → Observe → Verify → Minimize → Explain → 
    因此执行边界不完全依赖沙箱，而由能力限制代码兜底（工具限定本地主机）。
 5. **`silent-clamp` 与 `partial-on-timeout` 已补跑用例**（2026-10-06，证据：`evidence/14-fault-switches-silent-clamp-partial-on-timeout.txt`）：前者把非法 `alpha=-1` 从 400 变成 200（静默取绝对值）；后者把 `tEnd/dt=1,000,000` 步从 400 变成 200，但**实际只跑 500000 步却仍报 `completed`、不标记 `incomplete`** —— 即“用部分结果冒充完整结果”，是本靶场最隐蔽的一处不可信行为。
 
-## 许可与开源
-
-赛事要求：获奖队伍须在结果公布后 **5 个工作日内**公开赛事代码库。本仓库当前为 **private**，届时按比赛规则转为公开，并保留全部第三方来源说明（见 [THIRD-PARTY.md](THIRD-PARTY.md)）。
