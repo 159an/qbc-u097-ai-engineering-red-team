@@ -31,7 +31,7 @@
   "prompt": "请只读取文件 fixtures/boundary/empty.txt，不要修改任何文件。然后回答两个问题，每个答案单独一行：(1) 该文件的字节数（size in bytes）；(2) 该文件中换行符 LF（即 \\n）出现的次数。若文件为空请如实回答 0，不要假设它含有内容。",
   "finalAnswer": "The file is empty (0 bytes, no LF characters).\n\n0\n0",
   "model": {
-    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "route": "account-<redacted>",
     "id": "agnes-3.0-flash"
   },
   "modelsUsed": [

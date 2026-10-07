@@ -31,7 +31,7 @@
   "prompt": "请只读取文件 fixtures/normal/measurements.csv，不要修改任何文件。然后回答三个问题，每个答案单独一行：(1) 数据行数（不含表头）；(2) temperature_c 列的算术平均值；(3) pressure_kpa 列的算术平均值。两列平均值都保留 4 位小数。",
   "finalAnswer": "数据行数（不含表头）：12\n\ntemperature_c 平均值：21.4917\n\npressure_kpa 平均值：101.3083",
   "model": {
-    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "route": "account-<redacted>",
     "id": "agnes-3.0-flash"
   },
   "modelsUsed": [

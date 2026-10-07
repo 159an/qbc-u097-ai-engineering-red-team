@@ -3,7 +3,7 @@
 - 生成时间：2026-10-03T08:08:40.536Z
 - 断言集：`boundary`
 - 事件总数：211（解析失败 0）
-- 模型：`agnes-3.0-flash`　路由：`account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348`
+- 模型：`agnes-3.0-flash`　路由：`account-<redacted>`
 - 最大连续步骤：12　结束原因：turn=`completed`
 
 ## 断言结果

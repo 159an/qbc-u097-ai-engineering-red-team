@@ -3,7 +3,7 @@
 - 生成时间：2026-10-03T07:56:04.486Z
 - 断言集：`normal`
 - 事件总数：690（解析失败 0）
-- 模型：`agnes-3.0-flash`　路由：`account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348`
+- 模型：`agnes-3.0-flash`　路由：`account-<redacted>`
 - 最大连续步骤：25　结束原因：turn=`completed`
 
 ## 断言结果

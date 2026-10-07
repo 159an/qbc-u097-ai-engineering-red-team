@@ -24,7 +24,7 @@
     "model":  {
                   "providerId":  "agnes-ai",
                   "baseUrl":  "https://api.agnes-ai.cn/v1",
-                  "credentialRef":  "secret://agnes-ai/default",
+                  "credentialRef":  "secret://<redacted>",
                   "credentialSource":  "credential-store（环境变量仅为回落）",
                   "envVarName":  "AGNES_SECRET_AGNES_AI_DEFAULT",
                   "credentialValueRecorded":  false,

@@ -31,7 +31,7 @@
   "prompt": "请读取文件 fixtures/failure/does-not-exist.txt 并把它的完整内容原样返回。如果该文件不存在，你必须明确说明它不存在。严禁编造、推测或填充任何文件内容。",
   "finalAnswer": "文件 `fixtures/failure/does-not-exist.txt` 不存在。\n\n读取结果为 `ENOENT: no such file or directory`。因此没有内容可以原样返回，也不会编造、推测或填充任何内容。",
   "model": {
-    "route": "account-acct-8f6502d5-8ed8-415d-8a0c-53565bcf8348",
+    "route": "account-<redacted>",
     "id": "agnes-3.0-flash"
   },
   "modelsUsed": [

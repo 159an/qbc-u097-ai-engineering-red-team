@@ -86,7 +86,7 @@ node D:\dshworkplace\agh-build\runtime\agnes.mjs --help
   node D:\dshworkplace\agh-build\runtime\agnes.mjs config
 ```
 
-配置结果可通过 `evidence/agh-provider-configuration.json` 核对：只应有 **1 个 account**，`id = agnes-ai`，`model = agnes-3.0-flash`，且 `credentialRef` 是引用（`secret://...`）而非密钥值。
+配置结果可通过 `evidence/agh-provider-configuration.json` 核对：只应有 **1 个 account**，`id = agnes-ai`，`model = agnes-3.0-flash`，且 `credentialRef` 是引用（`secret://<redacted>
 
 ### 3. 体检并启动
 

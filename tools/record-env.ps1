@@ -55,7 +55,7 @@ if ($AghEntry -and (Test-Path -LiteralPath $AghEntry)) {
 # --- 模型提供方配置（只记录 provider 身份与 Base URL，不含密钥）---
 $agnesBaseUrl = 'https://api.agnes-ai.cn/v1'
 $providerId   = 'agnes-ai'
-$credentialRef = 'secret://agnes-ai/default'
+$credentialRef = 'secret://<redacted>
 $envKeyName   = 'AGNES_SECRET_AGNES_AI_DEFAULT'
 $envKeySet    = [bool]$env:AGNES_SECRET_AGNES_AI_DEFAULT
 
