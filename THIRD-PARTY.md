@@ -14,7 +14,6 @@
 | --- | --- | --- |
 | Agnes AI | `agnes-3.0-flash` | 经 AGH 的 AI Provider，以 `openai-completions` 协议调用 `https://api.agnes-ai.cn/v1`。**全部模型调用仅使用 Agnes 模型**，未接入任何其他厂商或第三方模型 |
 
-> 凭据（API Key）只存放于 AGH credential store 与本地环境变量，**不在本仓库中**。
 
 ## 依赖
 
